@@ -11,3 +11,6 @@ python-whois
 requests
 urllib3
 dnspython
+shap
+beautifulsoup4
+

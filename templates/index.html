@@ -4,29 +4,35 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Web Shield - Real-Time Phishing Threat Detection</title>
+    <title>Web Shield - Cyber-Command Phishing Intelligence</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap"
-        rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
         :root {
             --bg-dark: #090d16;
-            --bg-card: rgba(30, 41, 59, 0.65);
+            --bg-surface: #0f172a;
+            --bg-card: rgba(15, 23, 42, 0.75);
             --border-card: rgba(255, 255, 255, 0.08);
             --accent-primary: #6366f1;
             --accent-glow: rgba(99, 102, 241, 0.35);
             --text-main: #f8fafc;
             --text-muted: #94a3b8;
+            
             --safe-color: #10b981;
             --safe-bg: rgba(16, 185, 129, 0.12);
             --safe-border: rgba(16, 185, 129, 0.3);
             --safe-glow: 0 0 25px rgba(16, 185, 129, 0.35);
-            --danger-color: #f43f5e;
-            --danger-bg: rgba(244, 63, 94, 0.12);
-            --danger-border: rgba(244, 63, 94, 0.3);
-            --danger-glow: 0 0 25px rgba(244, 63, 94, 0.35);
+
+            --suspicious-color: #f59e0b;
+            --suspicious-bg: rgba(245, 158, 11, 0.12);
+            --suspicious-border: rgba(245, 158, 11, 0.3);
+            --suspicious-glow: 0 0 25px rgba(245, 158, 11, 0.35);
+
+            --critical-color: #f43f5e;
+            --critical-bg: rgba(244, 63, 94, 0.12);
+            --critical-border: rgba(244, 63, 94, 0.3);
+            --critical-glow: 0 0 25px rgba(244, 63, 94, 0.35);
         }
 
         * {
@@ -40,7 +46,8 @@
             background-color: var(--bg-dark);
             background-image:
                 radial-gradient(at 0% 0%, rgba(99, 102, 241, 0.15) 0px, transparent 50%),
-                radial-gradient(at 100% 100%, rgba(6, 182, 212, 0.12) 0px, transparent 50%);
+                radial-gradient(at 100% 100%, rgba(6, 182, 212, 0.12) 0px, transparent 50%),
+                radial-gradient(at 50% 50%, rgba(15, 23, 42, 0.8) 0px, transparent 100%);
             color: var(--text-main);
             min-height: 100vh;
             display: flex;
@@ -51,7 +58,7 @@
 
         .container {
             width: 100%;
-            max-width: 900px;
+            max-width: 960px;
         }
 
         header {
@@ -63,15 +70,15 @@
             display: inline-flex;
             align-items: center;
             gap: 10px;
-            padding: 8px 18px;
+            padding: 8px 20px;
             background: rgba(99, 102, 241, 0.1);
             border: 1px solid rgba(99, 102, 241, 0.3);
             border-radius: 30px;
-            font-size: 13px;
-            font-weight: 600;
+            font-size: 12px;
+            font-weight: 700;
             color: #818cf8;
             margin-bottom: 16px;
-            letter-spacing: 0.5px;
+            letter-spacing: 1px;
             text-transform: uppercase;
         }
 
@@ -85,20 +92,9 @@
         }
 
         @keyframes pulse {
-            0% {
-                transform: scale(0.95);
-                box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.7);
-            }
-
-            70% {
-                transform: scale(1);
-                box-shadow: 0 0 0 8px rgba(99, 102, 241, 0);
-            }
-
-            100% {
-                transform: scale(0.95);
-                box-shadow: 0 0 0 0 rgba(99, 102, 241, 0);
-            }
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(99, 102, 241, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
         }
 
         h1 {
@@ -118,9 +114,11 @@
             font-weight: 400;
         }
 
+        /* Search Card */
         .search-card {
             background: var(--bg-card);
             backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
             border: 1px solid var(--border-card);
             border-radius: 20px;
             padding: 30px;
@@ -131,7 +129,6 @@
         .search-form {
             display: flex;
             gap: 12px;
-            position: relative;
         }
 
         .input-wrapper {
@@ -141,13 +138,13 @@
 
         .input-wrapper input {
             width: 100%;
-            padding: 16px 20px 16px 45px;
-            background: rgba(15, 23, 42, 0.6);
+            padding: 16px 20px 16px 48px;
+            background: rgba(15, 23, 42, 0.8);
             border: 1.5px solid rgba(255, 255, 255, 0.1);
             border-radius: 12px;
             color: #ffffff;
             font-size: 15px;
-            font-family: 'Inter', sans-serif;
+            font-family: 'JetBrains Mono', monospace;
             transition: all 0.2s ease;
         }
 
@@ -155,12 +152,12 @@
             outline: none;
             border-color: var(--accent-primary);
             box-shadow: 0 0 0 4px var(--accent-glow);
-            background: rgba(15, 23, 42, 0.9);
+            background: rgba(15, 23, 42, 0.95);
         }
 
         .input-icon {
             position: absolute;
-            left: 16px;
+            left: 18px;
             top: 50%;
             transform: translateY(-50%);
             color: #64748b;
@@ -189,10 +186,6 @@
             background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
         }
 
-        button.btn-submit:active {
-            transform: translateY(0);
-        }
-
         .alert-error {
             background: rgba(244, 63, 94, 0.1);
             border: 1px solid rgba(244, 63, 94, 0.3);
@@ -210,6 +203,7 @@
         .result-card {
             background: var(--bg-card);
             backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
             border: 1px solid var(--border-card);
             border-radius: 20px;
             padding: 35px;
@@ -218,15 +212,8 @@
         }
 
         @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(10px);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
         .verdict-header {
@@ -246,9 +233,10 @@
             gap: 12px;
             padding: 12px 24px;
             border-radius: 50px;
-            font-size: 1.15rem;
-            font-weight: 700;
-            letter-spacing: 0.3px;
+            font-size: 1.1rem;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
         }
 
         .verdict-badge.safe {
@@ -258,22 +246,54 @@
             box-shadow: var(--safe-glow);
         }
 
-        .verdict-badge.danger {
-            background: var(--danger-bg);
-            border: 1.5px solid var(--danger-border);
-            color: var(--danger-color);
-            box-shadow: var(--danger-glow);
+        .verdict-badge.suspicious {
+            background: var(--suspicious-bg);
+            border: 1.5px solid var(--suspicious-border);
+            color: var(--suspicious-color);
+            box-shadow: var(--suspicious-glow);
         }
 
-        .target-url-display {
+        .verdict-badge.critical {
+            background: var(--critical-bg);
+            border: 1.5px solid var(--critical-border);
+            color: var(--critical-color);
+            box-shadow: var(--critical-glow);
+        }
+
+        .url-copy-box {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            padding: 8px 14px;
+            border-radius: 10px;
             font-family: 'JetBrains Mono', monospace;
             font-size: 13px;
             color: #94a3b8;
-            background: rgba(15, 23, 42, 0.5);
-            padding: 10px 16px;
-            border-radius: 8px;
-            word-break: break-all;
             max-width: 100%;
+        }
+
+        .defanged-text {
+            color: #cbd5e1;
+            word-break: break-all;
+        }
+
+        .btn-copy {
+            background: rgba(255, 255, 255, 0.08);
+            border: none;
+            color: #f8fafc;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+        }
+
+        .btn-copy:hover {
+            background: rgba(255, 255, 255, 0.18);
         }
 
         /* Confidence Progress */
@@ -310,12 +330,25 @@
             box-shadow: 0 0 12px rgba(16, 185, 129, 0.6);
         }
 
-        .confidence-fill.danger {
+        .confidence-fill.suspicious {
+            background: linear-gradient(90deg, #f59e0b 0%, #fbbf24 100%);
+            box-shadow: 0 0 12px rgba(245, 158, 11, 0.6);
+        }
+
+        .confidence-fill.critical {
             background: linear-gradient(90deg, #f43f5e 0%, #fb7185 100%);
             box-shadow: 0 0 12px rgba(244, 63, 94, 0.6);
         }
 
-        /* Feature Diagnostics Grid */
+        /* SHAP Section */
+        .shap-section {
+            background: rgba(15, 23, 42, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 16px;
+            padding: 24px;
+            margin-bottom: 30px;
+        }
+
         .section-title {
             font-size: 1.1rem;
             font-weight: 700;
@@ -323,18 +356,94 @@
             margin-bottom: 18px;
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 10px;
         }
 
+        .shap-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .shap-card {
+            background: rgba(30, 41, 59, 0.5);
+            border: 1px solid rgba(244, 63, 94, 0.2);
+            border-radius: 10px;
+            padding: 14px 18px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 15px;
+        }
+
+        .shap-card.safe-pill {
+            border-color: rgba(16, 185, 129, 0.2);
+        }
+
+        .shap-desc {
+            font-size: 14px;
+            font-weight: 600;
+            color: #f8fafc;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .shap-val {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            padding: 4px 10px;
+            border-radius: 6px;
+            background: rgba(244, 63, 94, 0.15);
+            color: #fca5a5;
+            font-weight: 600;
+        }
+
+        .shap-card.safe-pill .shap-val {
+            background: rgba(16, 185, 129, 0.15);
+            color: #6ee7b7;
+        }
+
+        /* Safety Recommendation */
+        .recommendation-box {
+            padding: 16px 20px;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 30px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .recommendation-box.critical {
+            background: rgba(244, 63, 94, 0.12);
+            border: 1px solid rgba(244, 63, 94, 0.3);
+            color: #fca5a5;
+        }
+
+        .recommendation-box.suspicious {
+            background: rgba(245, 158, 11, 0.12);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            color: #fcd34d;
+        }
+
+        .recommendation-box.safe {
+            background: rgba(16, 185, 129, 0.12);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+            color: #6ee7b7;
+        }
+
+        /* Feature Diagnostics Grid */
         .features-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
             gap: 16px;
             margin-bottom: 30px;
         }
 
         .feature-card {
-            background: rgba(15, 23, 42, 0.45);
+            background: rgba(15, 23, 42, 0.5);
             border: 1px solid rgba(255, 255, 255, 0.06);
             border-radius: 14px;
             padding: 16px 20px;
@@ -346,7 +455,7 @@
 
         .feature-card:hover {
             border-color: rgba(99, 102, 241, 0.3);
-            background: rgba(15, 23, 42, 0.65);
+            background: rgba(15, 23, 42, 0.75);
         }
 
         .feature-header {
@@ -368,48 +477,231 @@
             border-radius: 50%;
         }
 
-        .status-dot.safe {
-            background-color: #10b981;
-            box-shadow: 0 0 8px #10b981;
-        }
-
-        .status-dot.danger {
-            background-color: #f43f5e;
-            box-shadow: 0 0 8px #f43f5e;
-        }
-
-        .status-dot.neutral {
-            background-color: #94a3b8;
-        }
+        .status-dot.safe { background-color: #10b981; box-shadow: 0 0 8px #10b981; }
+        .status-dot.danger { background-color: #f43f5e; box-shadow: 0 0 8px #f43f5e; }
+        .status-dot.neutral { background-color: #94a3b8; }
 
         .feature-value {
-            font-size: 15px;
+            font-size: 14px;
             font-weight: 700;
             color: #f8fafc;
             font-family: 'JetBrains Mono', monospace;
         }
 
-        /* API Developer Callout */
-        .api-callout {
-            background: rgba(15, 23, 42, 0.7);
-            border: 1px dashed rgba(255, 255, 255, 0.12);
-            border-radius: 14px;
-            padding: 18px 22px;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 12px;
-            color: #94a3b8;
+        /* Actions Footer & Forensics Button */
+        .actions-bar {
             display: flex;
             align-items: center;
             justify-content: space-between;
+            flex-wrap: wrap;
             gap: 15px;
+            padding-top: 10px;
         }
 
-        .api-endpoint-tag {
-            background: rgba(99, 102, 241, 0.15);
+        .btn-forensics {
+            background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+            color: #ffffff;
+            border: none;
+            padding: 14px 26px;
+            border-radius: 12px;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            box-shadow: 0 4px 15px rgba(2, 132, 199, 0.35);
+        }
+
+        .btn-forensics:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(2, 132, 199, 0.5);
+            background: linear-gradient(135deg, #0369a1 0%, #075985 100%);
+        }
+
+        /* Modal Drawer */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: rgba(9, 13, 22, 0.85);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            display: flex;
+            justify-content: flex-end;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .modal-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .modal-drawer {
+            width: 100%;
+            max-width: 650px;
+            height: 100%;
+            background: #0f172a;
+            border-left: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: -20px 0 50px rgba(0, 0, 0, 0.6);
+            display: flex;
+            flex-direction: column;
+            transform: translateX(100%);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            overflow-y: auto;
+            padding: 30px;
+        }
+
+        .modal-overlay.active .modal-drawer {
+            transform: translateX(0);
+        }
+
+        .drawer-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding-bottom: 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            margin-bottom: 25px;
+        }
+
+        .drawer-title {
+            font-size: 1.25rem;
+            font-weight: 800;
+            color: #f8fafc;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .btn-close {
+            background: rgba(255, 255, 255, 0.08);
+            border: none;
+            color: #94a3b8;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            font-size: 18px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+        }
+
+        .btn-close:hover {
+            background: rgba(255, 255, 255, 0.2);
+            color: #ffffff;
+        }
+
+        /* Spinner & Loading */
+        .loading-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 60px 20px;
+            text-align: center;
+            gap: 20px;
+        }
+
+        .radar-spinner {
+            width: 60px;
+            height: 60px;
+            border: 3px solid rgba(99, 102, 241, 0.2);
+            border-top: 3px solid #6366f1;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .forensic-block {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 14px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .forensic-block-title {
+            font-size: 14px;
+            font-weight: 700;
             color: #818cf8;
-            padding: 4px 10px;
+            margin-bottom: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .timeline-list {
+            list-style: none;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .timeline-item {
+            background: rgba(30, 41, 59, 0.5);
+            border-left: 3px solid #6366f1;
+            padding: 10px 14px;
             border-radius: 6px;
-            font-weight: 600;
+            font-size: 13px;
+            font-family: 'JetBrains Mono', monospace;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .timeline-item.cross-domain {
+            border-left-color: #f59e0b;
+        }
+
+        .tag-pill {
+            font-size: 11px;
+            font-weight: 700;
+            padding: 3px 8px;
+            border-radius: 4px;
+            text-transform: uppercase;
+        }
+
+        .tag-pill.critical { background: rgba(244, 63, 94, 0.2); color: #fca5a5; }
+        .tag-pill.warning { background: rgba(245, 158, 11, 0.2); color: #fcd34d; }
+        .tag-pill.info { background: rgba(99, 102, 241, 0.2); color: #a5b4fc; }
+        .tag-pill.safe { background: rgba(16, 185, 129, 0.2); color: #6ee7b7; }
+
+        .btn-download-ioc {
+            width: 100%;
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: #ffffff;
+            border: none;
+            padding: 14px;
+            border-radius: 12px;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            margin-top: 20px;
+            box-shadow: 0 4px 15px rgba(16, 185, 129, 0.3);
+        }
+
+        .btn-download-ioc:hover {
+            background: linear-gradient(135deg, #059669 0%, #047857 100%);
         }
 
         footer {
@@ -420,18 +712,10 @@
         }
 
         @media (max-width: 640px) {
-            .search-form {
-                flex-direction: column;
-            }
-
-            button.btn-submit {
-                padding: 14px;
-                justify-content: center;
-            }
-
-            h1 {
-                font-size: 2rem;
-            }
+            .search-form { flex-direction: column; }
+            button.btn-submit { padding: 14px; justify-content: center; }
+            h1 { font-size: 2rem; }
+            .modal-drawer { max-width: 100%; }
         }
     </style>
 </head>
@@ -441,11 +725,10 @@
     <div class="container">
         <header>
             <div class="logo-badge">
-                <span></span> Real-Time Security Intelligence
+                <span></span> Web Shield Cyber-Command
             </div>
-            <h1>Web Shield Phishing Detector</h1>
-            <p class="subtitle">Enter any web address to inspect structural heuristics, SSL handshake, and XGBoost
-                classification.</p>
+            <h1>Phishing Threat Intelligence</h1>
+            <p class="subtitle">Structural heuristic analysis, SHAP explainability, and deep forensic inspection.</p>
         </header>
 
         <div class="search-card">
@@ -458,11 +741,10 @@
             <form action="/predict" method="POST" class="search-form">
                 <div class="input-wrapper">
                     <span class="input-icon">🌐</span>
-                    <input type="text" name="url" placeholder="Paste target URL (e.g. https://www.google.com)..."
-                        required value="{{ url if url else '' }}" autocomplete="off">
+                    <input type="text" name="url" id="targetUrlInput" placeholder="Enter target URL (e.g. https://www.paypal-login-secure.com)..." required value="{{ url if url else '' }}" autocomplete="off">
                 </div>
                 <button type="submit" class="btn-submit">
-                    <span>Analyze Link</span> ➔
+                    <span>Scan Target</span> ➔
                 </button>
             </form>
         </div>
@@ -470,32 +752,67 @@
         {% if prediction %}
         <div class="result-card">
             <div class="verdict-header">
-                {% if prediction == 'Legitimate' %}
+                {% if risk_level == 'critical' %}
+                <div class="verdict-badge critical">
+                    🚨 Critical Phishing Threat
+                </div>
+                {% elif risk_level == 'suspicious' %}
+                <div class="verdict-badge suspicious">
+                    ⚠️ Suspicious Indicators
+                </div>
+                {% else %}
                 <div class="verdict-badge safe">
                     🛡️ Legitimate (Safe Website)
                 </div>
-                {% else %}
-                <div class="verdict-badge danger">
-                    ⚠️ Phishing Suspected (High Threat)
-                </div>
                 {% endif %}
 
-                <div class="target-url-display">
-                    Target: {{ url }}
+                <div class="url-copy-box">
+                    <span>Defanged:</span>
+                    <span class="defanged-text" id="defangedUrlText">{{ defanged_url if defanged_url else url }}</span>
+                    <button type="button" class="btn-copy" onclick="copyDefangedUrl()">Copy</button>
                 </div>
             </div>
 
             <div class="confidence-box">
                 <div class="confidence-label-row">
-                    <span>Model Confidence Score</span>
+                    <span>Classification Confidence Score</span>
                     <span>{{ confidence }}%</span>
                 </div>
                 <div class="confidence-track">
-                    <div class="confidence-fill {{ 'safe' if prediction == 'Legitimate' else 'danger' }}"
-                        style="--conf: {{ confidence }}%; width: var(--conf);"></div>
+                    <div class="confidence-fill {{ risk_level if risk_level else ('safe' if prediction == 'Legitimate' else 'critical') }}" style="--conf: {{ confidence }}%; width: var(--conf);"></div>
                 </div>
             </div>
 
+            {% if recommendation %}
+            <div class="recommendation-box {{ risk_level if risk_level else 'safe' }}">
+                <span>💡</span>
+                <span>{{ recommendation }}</span>
+            </div>
+            {% endif %}
+
+            <!-- SHAP Explainability -->
+            {% if top_risk_factors %}
+            <div class="shap-section">
+                <div class="section-title">
+                    🧬 Why Was This Flagged? (Top SHAP Threat Signals)
+                </div>
+                <div class="shap-grid">
+                    {% for factor in top_risk_factors %}
+                    <div class="shap-card {{ 'safe-pill' if risk_level == 'safe' else '' }}">
+                        <div class="shap-desc">
+                            <span>⚡</span>
+                            <span>{{ factor.description if factor.description is defined else factor }}</span>
+                        </div>
+                        {% if factor.shap_value is defined %}
+                        <div class="shap-val">SHAP +{{ "%.3f"|format(factor.shap_value) }}</div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- 10 Structural Signals -->
             <div class="section-title">
                 🔍 Structural Feature Signals (10 Signals Analyzed)
             </div>
@@ -510,20 +827,18 @@
                         <span class="status-dot {{ 'safe' if features.ssl_valid == 1 else 'danger' }}"></span>
                     </div>
                     <div class="feature-value">
-                        {{ "Valid TLS Handshake" if features.ssl_valid == 1 else "Missing / Invalid SSL" }}
+                        {{ "Valid TLS Certificate" if features.ssl_valid == 1 else "Missing / Invalid SSL" }}
                     </div>
                 </div>
 
                 <!-- 2. Domain Age -->
                 <div class="feature-card">
                     <div class="feature-header">
-                        <span class="feature-name">Estimated Domain Age</span>
-                        <span
-                            class="status-dot {{ 'safe' if features.domain_age_months > 6 else ('neutral' if features.domain_age_months == -1 else 'danger') }}"></span>
+                        <span class="feature-name">Domain Age</span>
+                        <span class="status-dot {{ 'safe' if features.domain_age_months > 6 else ('neutral' if features.domain_age_months == -1 else 'danger') }}"></span>
                     </div>
                     <div class="feature-value">
-                        {{ features.domain_age_months ~ " Months" if features.domain_age_months != -1 else "Unverified
-                        (-1)" }}
+                        {{ features.domain_age_months ~ " Months" if features.domain_age_months != -1 else "Unverified (-1)" }}
                     </div>
                 </div>
 
@@ -542,8 +857,7 @@
                 <div class="feature-card">
                     <div class="feature-header">
                         <span class="feature-name">Threat Keywords</span>
-                        <span
-                            class="status-dot {{ 'danger' if features.has_suspicious_keyword == 1 else 'safe' }}"></span>
+                        <span class="status-dot {{ 'danger' if features.has_suspicious_keyword == 1 else 'safe' }}"></span>
                     </div>
                     <div class="feature-value">
                         {{ "Detected in Path/Sub" if features.has_suspicious_keyword == 1 else "None Detected" }}
@@ -619,22 +933,231 @@
             </div>
             {% endif %}
 
-            <div class="api-callout">
-                <div>
-                    <strong>Developer REST API:</strong> Programmatic access available via
-                    <span class="api-endpoint-tag">POST /api/v1/analyze</span>
-                </div>
-                <div>JSON format: <code>{"url": "https://..."}</code></div>
+            <div class="actions-bar">
+                <button type="button" class="btn-forensics" onclick="openForensicsDrawer('{{ url }}')">
+                    🔬 Run In-Depth Forensic Analysis
+                </button>
             </div>
 
         </div>
         {% endif %}
 
         <footer>
-            Web Shield &copy; 2026 — XGBoost Machine Learning Phishing Classification System
+            Web Shield &copy; 2026 — XGBoost Machine Learning &amp; Deep Cyber Forensics Intelligence
         </footer>
     </div>
 
+    <!-- Forensic Drawer Modal -->
+    <div class="modal-overlay" id="forensicModal" onclick="closeForensicsDrawerOnOverlay(event)">
+        <div class="modal-drawer">
+            <div class="drawer-header">
+                <div class="drawer-title">
+                    <span>🔬</span> Tier 2 Deep Forensic Report
+                </div>
+                <button type="button" class="btn-close" onclick="closeForensicsDrawer()">✕</button>
+            </div>
+
+            <div id="forensicLoading" class="loading-container">
+                <div class="radar-spinner"></div>
+                <div style="color: #a5b4fc; font-weight: 600;">Tracing Multi-Hop Redirects &amp; Auditing DOM Sinks...</div>
+            </div>
+
+            <div id="forensicContent" style="display: none;">
+                <div class="forensic-block">
+                    <div class="forensic-block-title">🌐 Target &amp; Execution Summary</div>
+                    <div style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #cbd5e1; display: flex; flex-direction: column; gap: 6px;">
+                        <div>Target: <span id="reportTarget"></span></div>
+                        <div>Final URL: <span id="reportFinalUrl"></span></div>
+                        <div>Scan Duration: <span id="reportDuration"></span>s</div>
+                    </div>
+                </div>
+
+                <div class="forensic-block">
+                    <div class="forensic-block-title">🔀 Multi-Hop Redirect Timeline</div>
+                    <ul class="timeline-list" id="redirectTimelineList"></ul>
+                </div>
+
+                <div class="forensic-block">
+                    <div class="forensic-block-title">🔑 Static DOM Credential Audit</div>
+                    <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;" id="credBadgesContainer"></div>
+                    <div style="font-size: 13px; color: #94a3b8;" id="credSinkSummary"></div>
+                </div>
+
+                <div class="forensic-block">
+                    <div class="forensic-block-title">🎭 Brand Impersonation &amp; Homoglyph Analysis</div>
+                    <div style="font-size: 13px; color: #cbd5e1; display: flex; flex-direction: column; gap: 8px;" id="homoglyphSummary"></div>
+                </div>
+
+                <button type="button" class="btn-download-ioc" id="btnDownloadIoc">
+                    📥 Download Standardized IOC Report (.json)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentIocReport = null;
+
+        function copyDefangedUrl() {
+            const defangedElem = document.getElementById('defangedUrlText');
+            if (!defangedElem) return;
+            const text = defangedElem.textContent || defangedElem.innerText;
+            navigator.clipboard.writeText(text).then(() => {
+                const btn = document.querySelector('.btn-copy');
+                if (btn) {
+                    btn.textContent = 'Copied!';
+                    setTimeout(() => { btn.textContent = 'Copy'; }, 2000);
+                }
+            }).catch(err => {
+                console.error('Failed to copy text: ', err);
+            });
+        }
+
+        function openForensicsDrawer(urlToScan) {
+            const modal = document.getElementById('forensicModal');
+            const loading = document.getElementById('forensicLoading');
+            const content = document.getElementById('forensicContent');
+            
+            if (!modal || !loading || !content) return;
+
+            modal.classList.add('active');
+            loading.style.display = 'flex';
+            content.style.display = 'none';
+            currentIocReport = null;
+
+            fetch('/api/v1/deep-analyze', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: urlToScan })
+            })
+            .then(res => res.json())
+            .then(data => {
+                loading.style.display = 'none';
+                if (data.status === 'success' && data.ioc_report) {
+                    currentIocReport = data.ioc_report;
+                    renderForensicReport(data.ioc_report);
+                    content.style.display = 'block';
+                } else {
+                    alert('Forensic Analysis Error: ' + (data.message || 'Unknown error occurred.'));
+                    closeForensicsDrawer();
+                }
+            })
+            .catch(err => {
+                loading.style.display = 'none';
+                alert('Failed to connect to Deep Analysis service: ' + err);
+                closeForensicsDrawer();
+            });
+        }
+
+        function closeForensicsDrawer() {
+            const modal = document.getElementById('forensicModal');
+            if (modal) modal.classList.remove('active');
+        }
+
+        function closeForensicsDrawerOnOverlay(event) {
+            if (event.target && event.target.id === 'forensicModal') {
+                closeForensicsDrawer();
+            }
+        }
+
+        function renderForensicReport(ioc) {
+            const forensics = ioc.forensics || {};
+            const target = ioc.target || {};
+
+            document.getElementById('reportTarget').textContent = target.defanged_url || target.original_url || '';
+            
+            const timelineList = forensics.redirect_timeline || [];
+            const finalHop = timelineList.length > 0 ? timelineList[timelineList.length - 1] : {};
+            document.getElementById('reportFinalUrl').textContent = finalHop.url || target.defanged_url || '';
+            document.getElementById('reportDuration').textContent = forensics.scan_duration_seconds || '0.0';
+
+            // Timeline
+            const timelineElem = document.getElementById('redirectTimelineList');
+            timelineElem.innerHTML = '';
+            if (timelineList.length === 0) {
+                const li = document.createElement('li');
+                li.className = 'timeline-item';
+                li.textContent = 'No redirects recorded.';
+                timelineElem.appendChild(li);
+            } else {
+                timelineList.forEach(hop => {
+                    const li = document.createElement('li');
+                    li.className = 'timeline-item' + (hop.cross_domain ? ' cross-domain' : '');
+                    
+                    const leftSpan = document.createElement('span');
+                    leftSpan.textContent = `Hop ${hop.hop}: ${hop.url}`;
+                    
+                    const rightSpan = document.createElement('span');
+                    rightSpan.className = 'tag-pill ' + (hop.cross_domain ? 'warning' : 'info');
+                    rightSpan.textContent = `HTTP ${hop.status}${hop.cross_domain ? ' (Cross Domain)' : ''}`;
+
+                    li.appendChild(leftSpan);
+                    li.appendChild(rightSpan);
+                    timelineElem.appendChild(li);
+                });
+            }
+
+            // Credential Audit
+            const credAudit = forensics.credential_audit || {};
+            const badgesElem = document.getElementById('credBadgesContainer');
+            badgesElem.innerHTML = '';
+
+            const sensitiveFields = credAudit.sensitive_fields || [];
+            if (sensitiveFields.length === 0) {
+                const span = document.createElement('span');
+                span.className = 'tag-pill safe';
+                span.textContent = 'No Sensitive Input Fields Found';
+                badgesElem.appendChild(span);
+            } else {
+                sensitiveFields.forEach(field => {
+                    const span = document.createElement('span');
+                    span.className = 'tag-pill critical';
+                    span.textContent = `Field: ${field.toUpperCase()}`;
+                    badgesElem.appendChild(span);
+                });
+            }
+
+            const sinkRisk = credAudit.sink_risk || 'low';
+            const exfilFlag = credAudit.exfiltration_flag || false;
+            const summaryElem = document.getElementById('credSinkSummary');
+            summaryElem.textContent = `Sink Risk: ${sinkRisk.toUpperCase()} | Exfiltration Flag: ${exfilFlag ? 'TRIGGERED 🚨' : 'CLEAN ✅'}`;
+
+            // Homoglyph
+            const homo = forensics.homoglyph_analysis || {};
+            const homoElem = document.getElementById('homoglyphSummary');
+            homoElem.innerHTML = '';
+            
+            const p1 = document.createElement('div');
+            p1.textContent = `Punycode IDNA: ${homo.is_punycode ? 'YES (xn-- detected)' : 'No'}`;
+            const p2 = document.createElement('div');
+            p2.textContent = `Mixed Unicode Script: ${homo.mixed_script ? 'YES (Homoglyph mixing)' : 'No'}`;
+            const p3 = document.createElement('div');
+            p3.textContent = `Suspected Target Brand: ${homo.suspected_brand ? homo.suspected_brand.toUpperCase() : 'None'}`;
+            const p4 = document.createElement('div');
+            p4.textContent = `Impersonation Risk Level: ${homo.impersonation_risk ? homo.impersonation_risk.toUpperCase() : 'LOW'}`;
+
+            homoElem.appendChild(p1);
+            homoElem.appendChild(p2);
+            homoElem.appendChild(p3);
+            homoElem.appendChild(p4);
+
+            // IOC Download Listener
+            const btnDownload = document.getElementById('btnDownloadIoc');
+            btnDownload.onclick = function() {
+                if (!currentIocReport) return;
+                const jsonStr = JSON.stringify(currentIocReport, null, 2);
+                const blob = new Blob([jsonStr], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `web_shield_ioc_${currentIocReport.scan_id || 'export'}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            };
+        }
+    </script>
 </body>
 
 </html>
