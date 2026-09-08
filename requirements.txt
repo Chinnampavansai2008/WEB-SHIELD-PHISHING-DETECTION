@@ -6,3 +6,8 @@ numpy
 joblib
 matplotlib
 seaborn
+tldextract
+python-whois
+requests
+urllib3
+dnspython

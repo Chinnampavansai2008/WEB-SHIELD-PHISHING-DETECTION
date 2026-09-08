@@ -9,7 +9,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import (
-    accuracy_score, precision_score, recall_score, f1_score, 
+    accuracy_score, precision_score, recall_score, f1_score, roc_auc_score,
     confusion_matrix, classification_report
 )
 from xgboost import XGBClassifier
@@ -24,14 +24,17 @@ os.makedirs('models', exist_ok=True)
 # -------------------------------------------------------------
 data_path = os.path.join('data', 'dataset.csv')
 if not os.path.exists(data_path):
-    raise FileNotFoundError("❌ 'data/dataset.csv' not found! Please run generate_data.py first.")
+    raise FileNotFoundError("Dataset file 'data/dataset.csv' not found! Please run generate_data.py first.")
 
 df = pd.read_csv(data_path)
-print(f"📊 Dataset Loaded Successfully: {df.shape[0]} rows, {df.shape[1]} columns.")
+print(f"Dataset Loaded Successfully: {df.shape[0]} rows, {df.shape[1]} columns.")
 
 # Separate Features (X) and Target Label (y)
 X = df.drop(columns=['label'])
 y = df['label']
+feature_names = list(X.columns)
+
+print(f"Feature Columns ({len(feature_names)}): {feature_names}")
 
 # -------------------------------------------------------------
 # 3. TRAIN-TEST SPLIT & FEATURE SCALING
@@ -45,40 +48,57 @@ X_train_scaled = scaler.fit_transform(X_train)
 X_test_scaled = scaler.transform(X_test)
 
 # -------------------------------------------------------------
-# 4. TRAIN ML MODELS (XGBoost & Random Forest)
+# 4. TRAIN ML MODELS (XGBoost & Random Forest Baseline)
 # -------------------------------------------------------------
-print("\n⚡ Training XGBoost Classifier...")
+print("\n--- Training Models ---")
+
+# 4a. XGBoost Classifier
+print("Training XGBoost Classifier (n_estimators=150, learning_rate=0.08, max_depth=5)...")
 xgb_model = XGBClassifier(
-    n_estimators=100, 
-    max_depth=5, 
-    learning_rate=0.1, 
-    random_state=42, 
-    eval_metric='logloss'
+    n_estimators=150,
+    learning_rate=0.08,
+    max_depth=5,
+    eval_metric='logloss',
+    random_state=42
 )
 xgb_model.fit(X_train_scaled, y_train)
 
-# Make Predictions
-y_pred = xgb_model.predict(X_test_scaled)
+y_pred_xgb = xgb_model.predict(X_test_scaled)
+y_proba_xgb = xgb_model.predict_proba(X_test_scaled)[:, 1]
+
+# 4b. Random Forest Classifier Baseline
+print("Training Random Forest Classifier Baseline (n_estimators=100)...")
+rf_model = RandomForestClassifier(n_estimators=100, random_state=42)
+rf_model.fit(X_train_scaled, y_train)
+
+y_pred_rf = rf_model.predict(X_test_scaled)
+y_proba_rf = rf_model.predict_proba(X_test_scaled)[:, 1]
 
 # -------------------------------------------------------------
-# 5. PRINT EVALUATION METRICS FOR REVIEW SLIDES
+# 5. METRIC COMPUTATION & MODEL COMPARISON
 # -------------------------------------------------------------
-acc = accuracy_score(y_test, y_pred) * 100
-prec = precision_score(y_test, y_pred) * 100
-rec = recall_score(y_test, y_pred) * 100
-f1 = f1_score(y_test, y_pred) * 100
+def compute_metrics(y_true, y_pred, y_proba):
+    return {
+        'Accuracy': accuracy_score(y_true, y_pred) * 100,
+        'Precision': precision_score(y_true, y_pred) * 100,
+        'Recall': recall_score(y_true, y_pred) * 100,
+        'F1-Score': f1_score(y_true, y_pred) * 100,
+        'ROC-AUC': roc_auc_score(y_true, y_proba) * 100
+    }
+
+xgb_metrics = compute_metrics(y_test, y_pred_xgb, y_proba_xgb)
+rf_metrics = compute_metrics(y_test, y_pred_rf, y_proba_rf)
+
+comparison_df = pd.DataFrame([rf_metrics, xgb_metrics], index=['RandomForest Baseline', 'XGBoost Classifier'])
 
 print("\n==================================================")
-print("🎯 MODEL PERFORMANCE EVALUATION (Slide 7 Metrics)")
+print("MODEL PERFORMANCE COMPARISON SUMMARY")
 print("==================================================")
-print(f"   Accuracy : {acc:.2f}%")
-print(f"   Precision: {prec:.2f}%")
-print(f"   Recall   : {rec:.2f}%")
-print(f"   F1-Score : {f1:.2f}%")
+print(comparison_df.round(2).to_string())
 print("==================================================\n")
 
-print("Detailed Classification Report:\n")
-print(classification_report(y_test, y_pred, target_names=['Legitimate', 'Phishing']))
+print("Detailed XGBoost Classification Report:\n")
+print(classification_report(y_test, y_pred_xgb, target_names=['Legitimate (0)', 'Phishing (1)']))
 
 # -------------------------------------------------------------
 # 6. SAVE MODEL ARTIFACTS TO 'models/' FOLDER
@@ -89,16 +109,17 @@ features_path = os.path.join('models', 'features.pkl')
 
 joblib.dump(xgb_model, model_path)
 joblib.dump(scaler, scaler_path)
-joblib.dump(list(X.columns), features_path)
+joblib.dump(feature_names, features_path)
 
-print("✅ Saved Model    -->", model_path)
-print("✅ Saved Scaler   -->", scaler_path)
-print("✅ Saved Features -->", features_path)
+print("Saved Model Artifacts:")
+print(f"   [1] Model File    --> {model_path}")
+print(f"   [2] Scaler File   --> {scaler_path}")
+print(f"   [3] Features List --> {features_path}")
 
 # -------------------------------------------------------------
-# 7. GENERATE & SAVE CONFUSION MATRIX PLOT (For Slide 7)
+# 7. GENERATE & SAVE CONFUSION MATRIX PLOT
 # -------------------------------------------------------------
-cm = confusion_matrix(y_test, y_pred)
+cm = confusion_matrix(y_test, y_pred_xgb)
 
 plt.figure(figsize=(6, 5))
 sns.heatmap(
@@ -107,12 +128,13 @@ sns.heatmap(
     yticklabels=['Legitimate (0)', 'Phishing (1)'],
     annot_kws={'size': 14, 'weight': 'bold'}
 )
-plt.title('Web Shield - Confusion Matrix', fontsize=12, fontweight='bold', pad=12)
+plt.title('Web Shield - XGBoost Confusion Matrix', fontsize=12, fontweight='bold', pad=12)
 plt.xlabel('Predicted Label', fontsize=10, fontweight='bold')
 plt.ylabel('True Label', fontsize=10, fontweight='bold')
 plt.tight_layout()
 
 matrix_img_path = os.path.join('models', 'confusion_matrix.png')
 plt.savefig(matrix_img_path, dpi=300)
-print("✅ Saved Confusion Matrix Graphic -->", matrix_img_path)
-print("\n🚀 All tasks complete! Ready for presentation screenshots.")
+print(f"   [4] Heatmap Chart --> {matrix_img_path}")
+
+print("\nAll 4 model artifacts successfully updated in 'models/' directory!")
