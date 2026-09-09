@@ -9,12 +9,19 @@ from urllib.parse import urlparse
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util import connection
-from typing import Dict, Any, Set
+from urllib3.connection import HTTPConnection, HTTPSConnection
+from typing import Dict, Any, Set, Optional
 
 
 class SSRFError(ValueError):
     """Raised when a URL targets a restricted IP range, private address, or violates SSRF rules."""
     pass
+
+
+class FetchError(ValueError):
+    """Raised when an HTTP fetch fails due to connection error, timeout, SSL failure, or network error."""
+    pass
+
 
 
 MAX_RESPONSE_SIZE = 2 * 1024 * 1024  # 2MB limit
@@ -24,34 +31,48 @@ DEFAULT_TIMEOUT = 3.0  # 3 seconds timeout
 def is_ip_safe(ip_str: str) -> bool:
     """
     Validates if an IP address string is globally routable and not in restricted private,
-    loopback, link-local (cloud metadata), CGNAT, or multicast ranges.
+    loopback, link-local (cloud metadata), CGNAT, multicast, or reserved ranges.
+    Handles IPv4, IPv6, IPv4-mapped IPv6, and NAT64 prefixes.
     """
     try:
         ip_obj = ipaddress.ip_address(ip_str)
     except ValueError:
         return False
 
-    if not ip_obj.is_global:
-        return False
-
-    if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local or ip_obj.is_multicast or ip_obj.is_reserved:
-        return False
-
     if ip_obj.version == 4:
+        if not ip_obj.is_global or ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local or ip_obj.is_multicast or ip_obj.is_reserved:
+            return False
         # CGNAT 100.64.0.0/10
         if ip_obj in ipaddress.ip_network("100.64.0.0/10"):
             return False
         # Link-local / AWS Metadata 169.254.0.0/16
         if ip_obj in ipaddress.ip_network("169.254.0.0/16"):
             return False
+        return True
 
-    return True
+    elif ip_obj.version == 6:
+        # Check IPv4-mapped IPv6 addresses (::ffff:x.x.x.x)
+        if ip_obj.ipv4_mapped:
+            return is_ip_safe(str(ip_obj.ipv4_mapped))
+
+        # Check NAT64 prefixes (64:ff9b::/96 WKP and 64:ff9b:1::/48 Local)
+        nat64_wkp = ipaddress.ip_network("64:ff9b::/96")
+        nat64_local = ipaddress.ip_network("64:ff9b:1::/48")
+        if ip_obj in nat64_wkp or ip_obj in nat64_local:
+            embedded_ipv4 = ipaddress.IPv4Address(ip_obj.packed[-4:])
+            return is_ip_safe(str(embedded_ipv4))
+
+        if not ip_obj.is_global or ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local or ip_obj.is_multicast or ip_obj.is_reserved:
+            return False
+        return True
+
+    return False
 
 
 def resolve_and_validate_host(hostname: str, port: int = 80) -> str:
     """
     Resolves hostname to IP using socket.getaddrinfo and verifies all returned IPs are global/safe.
-    Returns the validated IP string.
+    Returns the selected validated IP string (preferring IPv4 if available among safe IPs).
 
     Raises:
         SSRFError: If any resolved IP is non-global or private.
@@ -82,33 +103,81 @@ def resolve_and_validate_host(hostname: str, port: int = 80) -> str:
         ip_str = sock_addr[0]
         resolved_ips.add(ip_str)
 
-    # Reject if any resolved IP is unsafe
+    # Reject if ANY resolved IP is unsafe (prevents DNS rebinding and dual-homed SSRF attacks)
     for ip_str in resolved_ips:
         if not is_ip_safe(ip_str):
             raise SSRFError(f"Hostname '{hostname}' resolved to restricted IP '{ip_str}' (SSRF blocked).")
 
-    return list(resolved_ips)[0]
+    # Prefer IPv4 among safe resolved IPs if available
+    ipv4_ips = [ip for ip in resolved_ips if ipaddress.ip_address(ip).version == 4]
+    if ipv4_ips:
+        return sorted(ipv4_ips)[0]
+    return sorted(list(resolved_ips))[0]
+
+
+class PinnedHTTPSConnection(HTTPSConnection):
+    """
+    urllib3 HTTPSConnection subclass that overrides _new_conn to use pinned_ip for TCP socket creation
+    while preserving host for TLS SNI and certificate validation.
+    """
+    pinned_ip: Optional[str] = None
+
+    def _new_conn(self):
+        saved_dns_host = getattr(self, "_dns_host", self.host)
+        if self.pinned_ip:
+            self._dns_host = self.pinned_ip
+        try:
+            return super()._new_conn()
+        finally:
+            self._dns_host = saved_dns_host
+
+
+class PinnedHTTPConnection(HTTPConnection):
+    """
+    urllib3 HTTPConnection subclass that overrides _new_conn to use pinned_ip for TCP socket creation.
+    """
+    pinned_ip: Optional[str] = None
+
+    def _new_conn(self):
+        saved_dns_host = getattr(self, "_dns_host", self.host)
+        if self.pinned_ip:
+            self._dns_host = self.pinned_ip
+        try:
+            return super()._new_conn()
+        finally:
+            self._dns_host = saved_dns_host
 
 
 class PinnedIPAdapter(HTTPAdapter):
     """
-    Custom HTTPAdapter forcing requests to connect directly to the pre-validated target IP.
+    Custom HTTPAdapter forcing requests to connect directly to the pre-validated target IP
+    without triggering urllib3 2.x PoolKey errors or breaking TLS SNI/hostname verification.
     """
     def __init__(self, pinned_ip: str, *args, **kwargs):
         self.pinned_ip = pinned_ip
         super().__init__(*args, **kwargs)
 
-    def init_poolmanager(self, connections, maxsize, block=False, **pool_kwargs):
+    def get_connection_with_tls_context(self, request, verify, cert=None, proxies=None):
+        conn = super().get_connection_with_tls_context(request, verify, cert=cert, proxies=proxies)
         pinned_ip = self.pinned_ip
 
-        def _custom_create_connection(address, timeout=socket._GLOBAL_DEFAULT_TIMEOUT, source_address=None, socket_options=None):
-            # Connect socket to pinned_ip using specified port address[1]
-            return connection.create_connection((pinned_ip, address[1]), timeout, source_address, socket_options)
+        class CustomHTTPSConnection(PinnedHTTPSConnection):
+            pass
 
-        # Override default create_connection inside urllib3 pool manager
-        pool_kwargs['connection_pool_kw'] = pool_kwargs.get('connection_pool_kw', {})
-        pool_kwargs['connection_pool_kw']['create_connection'] = _custom_create_connection
-        super().init_poolmanager(connections, maxsize, block=block, **pool_kwargs)
+        CustomHTTPSConnection.pinned_ip = pinned_ip
+        conn.ConnectionCls = CustomHTTPSConnection
+        return conn
+
+    def get_connection(self, url, proxies=None):
+        conn = super().get_connection(url, proxies=proxies)
+        pinned_ip = self.pinned_ip
+
+        class CustomHTTPConnection(PinnedHTTPConnection):
+            pass
+
+        CustomHTTPConnection.pinned_ip = pinned_ip
+        conn.ConnectionCls = CustomHTTPConnection
+        return conn
 
 
 def safe_fetch(url: str, timeout: float = DEFAULT_TIMEOUT, max_size: int = MAX_RESPONSE_SIZE) -> Dict[str, Any]:
@@ -132,11 +201,15 @@ def safe_fetch(url: str, timeout: float = DEFAULT_TIMEOUT, max_size: int = MAX_R
 
     Raises:
         SSRFError: If target URL or resolved IP violates SSRF rules.
+        FetchError: If HTTP fetch fails after security validation.
     """
     parsed = urlparse(url)
     scheme = parsed.scheme.lower()
     if scheme not in ("http", "https"):
         raise SSRFError(f"Unsupported URL scheme '{scheme}'. Only http and https are allowed.")
+
+    if parsed.username or parsed.password or "@" in (parsed.netloc or ""):
+        raise SSRFError("URLs containing userinfo (username/password) are rejected.")
 
     hostname = parsed.hostname
     if not hostname:
@@ -186,5 +259,10 @@ def safe_fetch(url: str, timeout: float = DEFAULT_TIMEOUT, max_size: int = MAX_R
             "final_url": url,
             "resolved_ip": target_ip
         }
+    except SSRFError:
+        raise
     except requests.RequestException as e:
-        raise SSRFError(f"Failed to safely fetch URL: {e}")
+        raise FetchError(f"HTTP request failed: {e}")
+    except Exception as e:
+        raise FetchError(f"Failed to safely fetch URL: {e}")
+

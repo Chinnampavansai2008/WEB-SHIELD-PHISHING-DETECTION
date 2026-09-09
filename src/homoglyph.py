@@ -4,6 +4,7 @@ Detects Punycode hostnames, mixed unicode scripts, and brand impersonation attac
 """
 
 import unicodedata
+import tldextract
 from typing import Dict, Optional, List, Any
 
 
@@ -66,32 +67,38 @@ def _levenshtein_distance(s1: str, s2: str) -> int:
     return previous_row[-1]
 
 
+def _get_registered_domain_sld(hostname: str) -> str:
+    ext = tldextract.extract(hostname)
+    return (ext.domain or "").lower()
+
+
 def _detect_suspected_brand(hostname: str, brands: List[str] = TOP_BRANDS) -> Optional[str]:
     """
     Checks hostname tokens against top brands for typo-squatting or brand impersonation.
+    Legitimate brand subdomains (e.g. google.com, www.google.com, accounts.google.com)
+    are recognized as safe brand owners and will NOT be flagged as impersonators.
     """
     if not hostname:
         return None
 
-    decoded = hostname
+    decoded = hostname.lower()
     if _is_punycode(hostname):
         try:
-            decoded = hostname.encode("ascii").decode("idna")
+            decoded = hostname.encode("ascii").decode("idna").lower()
         except Exception:
-            decoded = hostname
+            decoded = hostname.lower()
 
-    labels = [l.lower() for l in decoded.split(".") if l]
+    reg_sld = _get_registered_domain_sld(decoded)
+    labels = [l for l in decoded.split(".") if l]
     if not labels:
         return None
 
-    registered_label = labels[-2] if len(labels) >= 2 else labels[0]
-
     for brand in brands:
-        # Legitimate apex domain check (e.g. google.com, paypal.com)
-        if registered_label == brand and len(labels) <= 2:
+        # Legitimate brand owner check (e.g. google.com, www.google.com, mail.google.com)
+        if reg_sld == brand:
             continue
 
-        # Extract sub-tokens from host labels (split by dot and hyphen)
+        # Check sub-tokens for brand impersonation or typosquatting on third-party domains
         domain_labels = labels[:-1] if len(labels) >= 2 else labels
         all_tokens = []
         for label in domain_labels:
@@ -110,6 +117,7 @@ def _detect_suspected_brand(hostname: str, brands: List[str] = TOP_BRANDS) -> Op
                 return brand
 
     return None
+
 
 
 

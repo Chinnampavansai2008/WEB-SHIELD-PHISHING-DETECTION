@@ -95,20 +95,23 @@ def analyze_credentials(html_content: str, page_url: str = "http://example.com")
 
     Returns:
         dict: {
+            'status': 'evaluated' | 'not_evaluated',
             'has_login_form': bool,
             'sensitive_fields': list,
             'form_actions': list,
-            'sink_risk': 'low' | 'medium' | 'high' | 'critical',
-            'exfiltration_flag': bool
+            'sink_risk': 'low' | 'medium' | 'high' | 'critical' | 'unknown',
+            'exfiltration_flag': bool | 'not_evaluated'
         }
     """
     if not html_content or not isinstance(html_content, str):
         return {
+            'status': 'not_evaluated',
+            'reason': 'No HTML content provided',
             'has_login_form': False,
             'sensitive_fields': [],
             'form_actions': [],
-            'sink_risk': 'low',
-            'exfiltration_flag': False
+            'sink_risk': 'unknown',
+            'exfiltration_flag': 'not_evaluated'
         }
 
     soup = BeautifulSoup(html_content, 'html.parser')
@@ -177,9 +180,11 @@ def analyze_credentials(html_content: str, page_url: str = "http://example.com")
         exfiltration_flag = False
 
     return {
+        'status': 'evaluated',
         'has_login_form': has_login_form,
         'sensitive_fields': sorted(list(sensitive_fields)),
         'form_actions': form_actions_info,
         'sink_risk': sink_risk,
         'exfiltration_flag': exfiltration_flag
     }
+

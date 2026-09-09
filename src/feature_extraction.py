@@ -67,6 +67,24 @@ def get_domain_age_months(domain: str, timeout: float = 3.0) -> int:
         return -1
 
 
+NEW_DOMAIN_THRESHOLD_MONTHS = 6
+
+
+def get_domain_age_status(domain_age_months: int) -> str:
+    """
+    Returns explicit domain age status string:
+    - 'unknown': WHOIS lookup failed, unverified, or IP address (-1)
+    - 'new': domain age < NEW_DOMAIN_THRESHOLD_MONTHS (0 to 5 months)
+    - 'known': domain age >= NEW_DOMAIN_THRESHOLD_MONTHS (6+ months)
+    """
+    if domain_age_months is None or domain_age_months == -1:
+        return "unknown"
+    elif domain_age_months < NEW_DOMAIN_THRESHOLD_MONTHS:
+        return "new"
+    else:
+        return "known"
+
+
 def extract_features(url: str) -> dict:
     """
     Extracts 10 robust ML features from an input URL string.

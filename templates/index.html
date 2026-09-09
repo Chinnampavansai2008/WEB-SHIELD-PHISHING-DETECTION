@@ -374,6 +374,7 @@
             align-items: center;
             justify-content: space-between;
             gap: 15px;
+            flex-wrap: wrap;
         }
 
         .shap-card.safe-pill {
@@ -381,22 +382,58 @@
         }
 
         .shap-desc {
-            font-size: 14px;
-            font-weight: 600;
-            color: #f8fafc;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .shap-label-row {
             display: flex;
             align-items: center;
             gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .shap-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: #f8fafc;
+        }
+
+        .shap-interpretation {
+            font-size: 12px;
+            font-weight: 600;
+            color: #94a3b8;
+            background: rgba(255, 255, 255, 0.06);
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+
+        .shap-meta {
+            font-size: 12px;
+            color: #cbd5e1;
+            font-family: 'JetBrains Mono', monospace;
         }
 
         .shap-val {
             font-family: 'JetBrains Mono', monospace;
             font-size: 12px;
-            padding: 4px 10px;
+            padding: 6px 12px;
             border-radius: 6px;
             background: rgba(244, 63, 94, 0.15);
             color: #fca5a5;
             font-weight: 600;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 2px;
+        }
+
+        .shap-dir {
+            font-size: 10px;
+            font-weight: 500;
+            opacity: 0.85;
+            text-transform: lowercase;
         }
 
         .shap-card.safe-pill .shap-val {
@@ -752,7 +789,7 @@
         {% if prediction %}
         <div class="result-card">
             <div class="verdict-header">
-                {% if risk_level == 'critical' %}
+                {% if risk_level == 'critical' or (prediction == 'Phishing' and risk_level != 'safe') %}
                 <div class="verdict-badge critical">
                     🚨 Critical Phishing Threat
                 </div>
@@ -762,7 +799,7 @@
                 </div>
                 {% else %}
                 <div class="verdict-badge safe">
-                    🛡️ Legitimate (Safe Website)
+                    🛡️ Verified Safe / Legitimate
                 </div>
                 {% endif %}
 
@@ -775,13 +812,14 @@
 
             <div class="confidence-box">
                 <div class="confidence-label-row">
-                    <span>Classification Confidence Score</span>
+                    <span>{{ "Phishing Probability" if prediction == 'Phishing' else "Legitimate Confidence" }}</span>
                     <span>{{ confidence }}%</span>
                 </div>
                 <div class="confidence-track">
                     <div class="confidence-fill {{ risk_level if risk_level else ('safe' if prediction == 'Legitimate' else 'critical') }}" style="--conf: {{ confidence }}%; width: var(--conf);"></div>
                 </div>
             </div>
+
 
             {% if recommendation %}
             <div class="recommendation-box {{ risk_level if risk_level else 'safe' }}">
@@ -794,17 +832,29 @@
             {% if top_risk_factors %}
             <div class="shap-section">
                 <div class="section-title">
-                    🧬 Why Was This Flagged? (Top SHAP Threat Signals)
+                    🧬 Model Explainability &amp; Feature Attribution (Top SHAP Signals)
                 </div>
                 <div class="shap-grid">
                     {% for factor in top_risk_factors %}
-                    <div class="shap-card {{ 'safe-pill' if risk_level == 'safe' else '' }}">
+                    <div class="shap-card {{ 'safe-pill' if (factor.direction is defined and factor.direction == 'toward_legitimate') or (factor.shap_value is defined and factor.shap_value <= 0) else '' }}">
                         <div class="shap-desc">
-                            <span>⚡</span>
-                            <span>{{ factor.description if factor.description is defined else factor }}</span>
+                            <div class="shap-label-row">
+                                <span class="shap-title">{{ factor.label if factor.label is defined else (factor.description if factor.description is defined else factor) }}</span>
+                                {% if factor.semantic_interpretation is defined %}
+                                <span class="shap-interpretation">{{ factor.semantic_interpretation }}</span>
+                                {% endif %}
+                            </div>
+                            {% if factor.observed_value is defined %}
+                            <div class="shap-meta">
+                                <span>Observed: <strong>{{ factor.observed_value }}</strong></span>
+                            </div>
+                            {% endif %}
                         </div>
                         {% if factor.shap_value is defined %}
-                        <div class="shap-val">SHAP +{{ "%.3f"|format(factor.shap_value) }}</div>
+                        <div class="shap-val">
+                            <span>SHAP {{ "+" if factor.shap_value > 0 else "" }}{{ "%.3f"|format(factor.shap_value) }}</span>
+                            <span class="shap-dir">({{ "toward phishing" if (factor.direction is defined and factor.direction == "toward_phishing") or factor.shap_value > 0 else "toward legitimate" }})</span>
+                        </div>
                         {% endif %}
                     </div>
                     {% endfor %}
@@ -835,10 +885,22 @@
                 <div class="feature-card">
                     <div class="feature-header">
                         <span class="feature-name">Domain Age</span>
-                        <span class="status-dot {{ 'safe' if features.domain_age_months > 6 else ('neutral' if features.domain_age_months == -1 else 'danger') }}"></span>
+                        {% if domain_age_status == 'unknown' or features.domain_age_months == -1 %}
+                        <span class="status-dot neutral"></span>
+                        {% elif domain_age_status == 'new' or features.domain_age_months < 6 %}
+                        <span class="status-dot danger"></span>
+                        {% else %}
+                        <span class="status-dot safe"></span>
+                        {% endif %}
                     </div>
                     <div class="feature-value">
-                        {{ features.domain_age_months ~ " Months" if features.domain_age_months != -1 else "Unverified (-1)" }}
+                        {% if domain_age_status == 'unknown' or features.domain_age_months == -1 %}
+                        Unknown / Unverified
+                        {% elif domain_age_status == 'new' or features.domain_age_months < 6 %}
+                        {{ features.domain_age_months }} Months (New Domain)
+                        {% else %}
+                        {{ features.domain_age_months }} Months (Established)
+                        {% endif %}
                     </div>
                 </div>
 
@@ -1063,12 +1125,15 @@
         function renderForensicReport(ioc) {
             const forensics = ioc.forensics || {};
             const target = ioc.target || {};
+            const credAudit = forensics.credential_audit || {};
+            const fetchSucceeded = forensics.fetch_succeeded !== undefined ? forensics.fetch_succeeded : (credAudit.status === 'evaluated');
 
             document.getElementById('reportTarget').textContent = target.defanged_url || target.original_url || '';
             
             const timelineList = forensics.redirect_timeline || [];
             const finalHop = timelineList.length > 0 ? timelineList[timelineList.length - 1] : {};
-            document.getElementById('reportFinalUrl').textContent = finalHop.url || target.defanged_url || '';
+            
+            document.getElementById('reportFinalUrl').textContent = fetchSucceeded ? (finalHop.url || target.defanged_url || '') : 'FETCH FAILED (No HTML retrieved)';
             document.getElementById('reportDuration').textContent = forensics.scan_duration_seconds || '0.0';
 
             // Timeline
@@ -1077,7 +1142,7 @@
             if (timelineList.length === 0) {
                 const li = document.createElement('li');
                 li.className = 'timeline-item';
-                li.textContent = 'No redirects recorded.';
+                li.textContent = fetchSucceeded ? 'No redirects recorded.' : `Fetch failed: ${forensics.error || 'Connection error'}`;
                 timelineElem.appendChild(li);
             } else {
                 timelineList.forEach(hop => {
@@ -1088,8 +1153,8 @@
                     leftSpan.textContent = `Hop ${hop.hop}: ${hop.url}`;
                     
                     const rightSpan = document.createElement('span');
-                    rightSpan.className = 'tag-pill ' + (hop.cross_domain ? 'warning' : 'info');
-                    rightSpan.textContent = `HTTP ${hop.status}${hop.cross_domain ? ' (Cross Domain)' : ''}`;
+                    rightSpan.className = 'tag-pill ' + (hop.status ? (hop.cross_domain ? 'warning' : 'info') : 'critical');
+                    rightSpan.textContent = hop.status ? `HTTP ${hop.status}${hop.cross_domain ? ' (Cross Domain)' : ''}` : `HTTP N/A (${hop.error || 'Fetch Failed'})`;
 
                     li.appendChild(leftSpan);
                     li.appendChild(rightSpan);
@@ -1097,30 +1162,38 @@
                 });
             }
 
-            // Credential Audit
-            const credAudit = forensics.credential_audit || {};
+            // Credential Audit & Sink Summary
             const badgesElem = document.getElementById('credBadgesContainer');
             badgesElem.innerHTML = '';
-
-            const sensitiveFields = credAudit.sensitive_fields || [];
-            if (sensitiveFields.length === 0) {
-                const span = document.createElement('span');
-                span.className = 'tag-pill safe';
-                span.textContent = 'No Sensitive Input Fields Found';
-                badgesElem.appendChild(span);
-            } else {
-                sensitiveFields.forEach(field => {
-                    const span = document.createElement('span');
-                    span.className = 'tag-pill critical';
-                    span.textContent = `Field: ${field.toUpperCase()}`;
-                    badgesElem.appendChild(span);
-                });
-            }
-
-            const sinkRisk = credAudit.sink_risk || 'low';
-            const exfilFlag = credAudit.exfiltration_flag || false;
             const summaryElem = document.getElementById('credSinkSummary');
-            summaryElem.textContent = `Sink Risk: ${sinkRisk.toUpperCase()} | Exfiltration Flag: ${exfilFlag ? 'TRIGGERED 🚨' : 'CLEAN ✅'}`;
+
+            if (!fetchSucceeded || credAudit.status === 'not_evaluated' || credAudit.sink_risk === 'unknown') {
+                const span = document.createElement('span');
+                span.className = 'tag-pill warning';
+                span.textContent = 'CREDENTIAL ANALYSIS: NOT EVALUATED';
+                badgesElem.appendChild(span);
+
+                summaryElem.textContent = `Sink Risk: UNKNOWN | Exfiltration Flag: NOT EVALUATED (${credAudit.reason || forensics.error || 'Final HTML could not be retrieved'})`;
+            } else {
+                const sensitiveFields = credAudit.sensitive_fields || [];
+                if (sensitiveFields.length === 0) {
+                    const span = document.createElement('span');
+                    span.className = 'tag-pill safe';
+                    span.textContent = 'No Sensitive Input Fields Found';
+                    badgesElem.appendChild(span);
+                } else {
+                    sensitiveFields.forEach(field => {
+                        const span = document.createElement('span');
+                        span.className = 'tag-pill critical';
+                        span.textContent = `Field: ${field.toUpperCase()}`;
+                        badgesElem.appendChild(span);
+                    });
+                }
+
+                const sinkRisk = credAudit.sink_risk || 'low';
+                const exfilFlag = credAudit.exfiltration_flag || false;
+                summaryElem.textContent = `Sink Risk: ${sinkRisk.toUpperCase()} | Exfiltration Flag: ${exfilFlag ? 'TRIGGERED 🚨' : 'CLEAN ✅'}`;
+            }
 
             // Homoglyph
             const homo = forensics.homoglyph_analysis || {};
@@ -1157,6 +1230,7 @@
                 URL.revokeObjectURL(url);
             };
         }
+
     </script>
 </body>
 

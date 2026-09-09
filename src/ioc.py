@@ -69,6 +69,9 @@ def generate_ioc(target_url: str, forensic_report: Dict[str, Any], shap_risk_fac
             'redirect_hops': forensic_report.get('redirect_count', 0)
         },
         'forensics': {
+            'scan_status': forensic_report.get('scan_status', 'completed'),
+            'fetch_succeeded': forensic_report.get('fetch_succeeded', False),
+            'http_status': forensic_report.get('http_status', None),
             'title': forensic_report.get('title', ''),
             'meta_description': forensic_report.get('meta_description', ''),
             'redirect_timeline': forensic_report.get('redirect_timeline', []),
@@ -76,6 +79,8 @@ def generate_ioc(target_url: str, forensic_report: Dict[str, Any], shap_risk_fac
             'homoglyph_analysis': forensic_report.get('homoglyph_analysis', {}),
             'top_risk_factors': shap_risk_factors or [],
             'scan_duration_seconds': forensic_report.get('scan_duration_seconds', 0.0),
-            'deadline_exceeded': forensic_report.get('deadline_exceeded', False)
+            'deadline_exceeded': forensic_report.get('deadline_exceeded', False),
+            'error': forensic_report.get('error', None)
         }
     }
+

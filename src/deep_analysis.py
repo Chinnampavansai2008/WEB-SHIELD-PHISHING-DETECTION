@@ -23,9 +23,10 @@ MAX_REDIRECT_HOPS = 5
 
 def _get_registered_domain(url: str) -> str:
     ext = tldextract.extract(url)
-    if hasattr(ext, 'top_domain_under_public_suffix') and ext.top_domain_under_public_suffix:
-        return ext.top_domain_under_public_suffix
-    return getattr(ext, 'registered_domain', '') or ''
+    return ext.top_domain_under_public_suffix
+
+
+
 
 
 def perform_deep_analysis(url: str, timeout_budget: float = GLOBAL_SCAN_DEADLINE_SECONDS) -> Dict[str, Any]:
@@ -46,7 +47,8 @@ def perform_deep_analysis(url: str, timeout_budget: float = GLOBAL_SCAN_DEADLINE
     current_url = url
     hop_count = 0
     final_html = ""
-    status_code = 0
+    status_code = None
+    fetch_succeeded = False
     deadline_exceeded = False
     error_message = None
 
@@ -55,13 +57,25 @@ def perform_deep_analysis(url: str, timeout_budget: float = GLOBAL_SCAN_DEADLINE
         current_url = norm["canonical_url"]
     except InvalidURLError as e:
         return {
+            'scan_status': 'failed',
+            'fetch_succeeded': False,
+            'http_status': None,
+            'fetch_status': 'invalid_url',
             'target_url': defang_url(url),
             'final_url': defang_url(url),
             'redirect_count': 0,
             'redirect_timeline': [],
             'title': '',
             'meta_description': '',
-            'credential_analysis': analyze_credentials(""),
+            'credential_analysis': {
+                'status': 'not_evaluated',
+                'reason': f"URL Normalization error: {e}",
+                'has_login_form': False,
+                'sensitive_fields': [],
+                'form_actions': [],
+                'sink_risk': 'unknown',
+                'exfiltration_flag': 'not_evaluated'
+            },
             'homoglyph_analysis': analyze_homoglyphs(""),
             'scan_duration_seconds': round(time.monotonic() - start_time, 4),
             'deadline_exceeded': False,
@@ -72,21 +86,23 @@ def perform_deep_analysis(url: str, timeout_budget: float = GLOBAL_SCAN_DEADLINE
 
     while hop_count <= MAX_REDIRECT_HOPS:
         time_left = deadline - time.monotonic()
-        if time_left <= 0:
+        if time_left <= 0.005:
             deadline_exceeded = True
+            error_message = error_message or "Global scan deadline exceeded"
             break
 
-        fetch_timeout = min(time_left, DEFAULT_TIMEOUT)
+        fetch_timeout = max(0.05, min(time_left, DEFAULT_TIMEOUT))
+
 
         try:
             res = safe_fetch(current_url, timeout=fetch_timeout)
             status_code = res["status_code"]
             headers = res["headers"]
             final_html = res["text"]
+            fetch_succeeded = True
 
             curr_domain = _get_registered_domain(current_url)
             cross_domain = bool(previous_domain and curr_domain and previous_domain != curr_domain)
-
 
             hop_info = {
                 'hop': hop_count,
@@ -115,15 +131,16 @@ def perform_deep_analysis(url: str, timeout_budget: float = GLOBAL_SCAN_DEADLINE
             hop_info = {
                 'hop': hop_count,
                 'url': defang_url(current_url),
-                'status': status_code or 0,
-                'error': str(e)
+                'status': status_code if fetch_succeeded else None,
+                'error': error_message
             }
             redirect_timeline.append(hop_info)
             break
 
+    # Extract DOM details only if fetch succeeded
     title = ""
     meta_description = ""
-    if final_html:
+    if fetch_succeeded and final_html:
         try:
             soup = BeautifulSoup(final_html, 'html.parser')
             if soup.title and soup.title.string:
@@ -134,16 +151,33 @@ def perform_deep_analysis(url: str, timeout_budget: float = GLOBAL_SCAN_DEADLINE
         except Exception:
             pass
 
-    cred_analysis = analyze_credentials(final_html, current_url)
+        cred_analysis = analyze_credentials(final_html, current_url)
+        scan_status = 'completed' if not error_message else 'partial'
+    else:
+        scan_status = 'failed'
+        cred_analysis = {
+            'status': 'not_evaluated',
+            'reason': f"Final HTML could not be retrieved: {error_message or 'Fetch failed'}",
+            'has_login_form': False,
+            'sensitive_fields': [],
+            'form_actions': [],
+            'sink_risk': 'unknown',
+            'exfiltration_flag': 'not_evaluated'
+        }
+
     parsed_final = urlparse(current_url)
     homoglyph_analysis = analyze_homoglyphs(parsed_final.hostname or "")
 
     duration = round(time.monotonic() - start_time, 4)
 
     return {
+        'scan_status': scan_status,
+        'fetch_succeeded': fetch_succeeded,
+        'http_status': status_code,
+        'fetch_status': 'success' if fetch_succeeded else 'request_error',
         'target_url': defang_url(url),
         'final_url': defang_url(current_url),
-        'redirect_count': len(redirect_timeline) - 1 if len(redirect_timeline) > 1 else 0,
+        'redirect_count': len(redirect_timeline) - 1 if len(redirect_timeline) > 1 and fetch_succeeded else 0,
         'redirect_timeline': redirect_timeline,
         'title': title,
         'meta_description': meta_description,
@@ -153,3 +187,4 @@ def perform_deep_analysis(url: str, timeout_budget: float = GLOBAL_SCAN_DEADLINE
         'deadline_exceeded': deadline_exceeded or (duration >= timeout_budget),
         'error': error_message
     }
+

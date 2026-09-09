@@ -1,0 +1,36 @@
+{
+  "model_version": "v2",
+  "algorithm": "XGBoostClassifier",
+  "scaler_used": false,
+  "features": [
+    "url_length",
+    "having_ip",
+    "has_at_symbol",
+    "redirect_count",
+    "subdomain_count",
+    "hyphen_count",
+    "domain_entropy",
+    "has_suspicious_keyword",
+    "ssl_valid",
+    "domain_age_months_clean",
+    "domain_age_known"
+  ],
+  "feature_count": 11,
+  "dataset_size": 1242,
+  "deduplicated_unique_domains": 699,
+  "test_metrics_grouped_domain": {
+    "accuracy": 93.47,
+    "precision": 88.3,
+    "recall": 94.32,
+    "f1_score": 91.21,
+    "roc_auc": 97.27,
+    "pr_auc": 97.23,
+    "false_positive_rate": 7.01,
+    "false_negative_rate": 5.68
+  },
+  "adversarial_false_positives": {
+    "v1_fp_count": 14,
+    "v2_fp_count": 2,
+    "total_test_urls": 15
+  }
+}
