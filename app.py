@@ -78,10 +78,9 @@ def analyze_tier1_url(raw_url: str, force_model_version: str = None) -> dict:
     verdict = 'Phishing' if is_phishing else 'Legitimate'
 
     if is_phishing:
-        conf_val = max(phishing_prob, 0.88 if risk_level == 'critical' else 0.50)
-        confidence = round(conf_val * 100, 1)
+        confidence = round(phishing_prob * 100, 2)
     else:
-        confidence = round((1.0 - phishing_prob) * 100, 1)
+        confidence = round((1.0 - phishing_prob) * 100, 2)
 
     if risk_level == 'critical':
         recommendation = "DANGER: High-risk phishing or homoglyph impersonation site detected! Do NOT interact or enter credentials."
@@ -98,6 +97,7 @@ def analyze_tier1_url(raw_url: str, force_model_version: str = None) -> dict:
         'risk_level': risk_level,
         'confidence': confidence,
         'phishing_probability': round(phishing_prob, 4),
+        'ml_probability': round(phishing_prob, 4),
         'features': features_dict,
         'domain_age_status': domain_age_status,
         'homoglyph_analysis': homoglyph_res,
@@ -106,23 +106,6 @@ def analyze_tier1_url(raw_url: str, force_model_version: str = None) -> dict:
         'model_version': active_predictor.version,
         'model_feature_count': len(active_predictor.feature_names)
     }
-
-
-    return {
-        'url': canonical_url,
-        'defanged_url': defanged,
-        'hostname': hostname,
-        'prediction': verdict,
-        'risk_level': risk_level,
-        'confidence': confidence,
-        'phishing_probability': round(phishing_prob, 4),
-        'features': features_dict,
-        'domain_age_status': domain_age_status,
-        'homoglyph_analysis': homoglyph_res,
-        'top_risk_factors': top_risk_factors,
-        'recommendation': recommendation
-    }
-
 
 
 # -------------------------------------------------------------
@@ -191,6 +174,7 @@ def api_deep_analyze():
         return jsonify({'status': 'error', 'message': 'Missing required parameter: "url"'}), 400
 
     try:
+        tier1_res = None
         shap_factors = []
         try:
             tier1_res = analyze_tier1_url(url)
@@ -200,6 +184,16 @@ def api_deep_analyze():
 
         forensic_report = perform_deep_analysis(url)
         ioc_report = generate_ioc(url, forensic_report, shap_risk_factors=shap_factors)
+
+        if tier1_res:
+            tier1_summary = {
+                'prediction': tier1_res.get('prediction'),
+                'risk_level': tier1_res.get('risk_level'),
+                'phishing_probability': tier1_res.get('phishing_probability'),
+                'confidence': tier1_res.get('confidence')
+            }
+            ioc_report['tier1_assessment'] = tier1_summary
+            ioc_report['forensics']['tier1_assessment'] = tier1_summary
 
         return jsonify({
             'status': 'success',

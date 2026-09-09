@@ -787,7 +787,10 @@
         </div>
 
         {% if prediction %}
-        <div class="result-card">
+        <div class="result-card" id="tier1ResultCard">
+            <div style="font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1.2px; color: #818cf8; margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
+                <span>🤖</span> ML RISK ASSESSMENT (TIER 1 TRIAGE)
+            </div>
             <div class="verdict-header">
                 {% if risk_level == 'critical' or (prediction == 'Phishing' and risk_level != 'safe') %}
                 <div class="verdict-badge critical">
@@ -812,7 +815,7 @@
 
             <div class="confidence-box">
                 <div class="confidence-label-row">
-                    <span>{{ "Phishing Probability" if prediction == 'Phishing' else "Legitimate Confidence" }}</span>
+                    <span>{{ "ML Phishing Probability" if prediction == 'Phishing' else "Legitimate Confidence" }}</span>
                     <span>{{ confidence }}%</span>
                 </div>
                 <div class="confidence-track">
@@ -864,7 +867,10 @@
 
             <!-- 10 Structural Signals -->
             <div class="section-title">
-                🔍 Structural Feature Signals (10 Signals Analyzed)
+                🔍 Structural URL &amp; Domain Signals
+            </div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: -12px; margin-bottom: 18px; font-weight: 500;">
+                10 displayed signals • 11 encoded Model V2 features
             </div>
 
             {% if features %}
@@ -1028,9 +1034,12 @@
                 <div class="forensic-block">
                     <div class="forensic-block-title">🌐 Target &amp; Execution Summary</div>
                     <div style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #cbd5e1; display: flex; flex-direction: column; gap: 6px;">
-                        <div>Target: <span id="reportTarget"></span></div>
+                        <div>Requested URL: <span id="reportTarget"></span></div>
                         <div>Final URL: <span id="reportFinalUrl"></span></div>
+                        <div>Analyzed Content: <span id="reportAnalyzedContentNote">Final fetched page</span></div>
                         <div>Scan Duration: <span id="reportDuration"></span>s</div>
+                        <div>Analysis Confidence: <span id="reportConfidenceBadge" class="tag-pill info">HIGH</span></div>
+                        <div id="reportConfidenceReason" style="font-size: 12px; color: #fcd34d; font-family: 'Inter', sans-serif; margin-top: 4px; display: none;"></div>
                     </div>
                 </div>
 
@@ -1040,9 +1049,23 @@
                 </div>
 
                 <div class="forensic-block">
-                    <div class="forensic-block-title">🔑 Static DOM Credential Audit</div>
+                    <div class="forensic-block-title">🔑 Static Forensic Credential Evidence</div>
                     <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;" id="credBadgesContainer"></div>
-                    <div style="font-size: 13px; color: #94a3b8;" id="credSinkSummary"></div>
+                    <div style="font-size: 13px; color: #cbd5e1; font-weight: 600;" id="credSinkSummary"></div>
+                    <div style="font-size: 12px; color: #94a3b8; margin-top: 8px; font-style: italic;" id="credDisclaimer">
+                        No credential-harvesting evidence was identified in the fetched static DOM. This does not establish that the entire site is safe.
+                    </div>
+                </div>
+
+                <div class="forensic-block" id="combinedSummaryBlock">
+                    <div class="forensic-block-title">⚖️ Combined Evidence Summary</div>
+                    <div style="display: flex; flex-direction: column; gap: 8px; font-size: 13px;">
+                        <div><strong>ML Risk Assessment:</strong> <span id="combinedMlRisk" class="tag-pill critical">CRITICAL</span></div>
+                        <div><strong>Static Forensic Evidence:</strong> <span id="combinedForensicEvidence" class="tag-pill safe">LOW</span></div>
+                        <div style="background: rgba(255, 255, 255, 0.05); padding: 12px; border-radius: 8px; border-left: 3px solid #818cf8; margin-top: 4px;">
+                            <strong>Interpretation:</strong> <span id="combinedInterpretation" style="color: #cbd5e1;"></span>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="forensic-block">
@@ -1127,14 +1150,35 @@
             const target = ioc.target || {};
             const credAudit = forensics.credential_audit || {};
             const fetchSucceeded = forensics.fetch_succeeded !== undefined ? forensics.fetch_succeeded : (credAudit.status === 'evaluated');
+            const tier1Assessment = ioc.tier1_assessment || forensics.tier1_assessment || {};
 
             document.getElementById('reportTarget').textContent = target.defanged_url || target.original_url || '';
             
             const timelineList = forensics.redirect_timeline || [];
             const finalHop = timelineList.length > 0 ? timelineList[timelineList.length - 1] : {};
+            const finalUrlText = fetchSucceeded ? (finalHop.url || target.defanged_url || '') : 'FETCH FAILED (No HTML retrieved)';
             
-            document.getElementById('reportFinalUrl').textContent = fetchSucceeded ? (finalHop.url || target.defanged_url || '') : 'FETCH FAILED (No HTML retrieved)';
+            document.getElementById('reportFinalUrl').textContent = finalUrlText;
             document.getElementById('reportDuration').textContent = forensics.scan_duration_seconds || '0.0';
+
+            // Analyzed content notice & confidence
+            const confidenceBadge = document.getElementById('reportConfidenceBadge');
+            const confidenceReason = document.getElementById('reportConfidenceReason');
+            const confidenceVal = forensics.analysis_confidence || (fetchSucceeded ? 'HIGH' : 'UNKNOWN');
+
+            confidenceBadge.textContent = confidenceVal;
+            if (confidenceVal === 'LIMITED' || forensics.is_interstitial) {
+                confidenceBadge.className = 'tag-pill warning';
+                confidenceReason.style.display = 'block';
+                confidenceReason.textContent = forensics.analysis_confidence_reason || 'The target redirected to verification/interstitial content, so the static DOM audit may not represent the intended destination page.';
+            } else if (confidenceVal === 'HIGH') {
+                confidenceBadge.className = 'tag-pill safe';
+                confidenceReason.style.display = 'none';
+            } else {
+                confidenceBadge.className = 'tag-pill warning';
+                confidenceReason.style.display = 'block';
+                confidenceReason.textContent = forensics.analysis_confidence_reason || 'Static HTML could not be retrieved.';
+            }
 
             // Timeline
             const timelineElem = document.getElementById('redirectTimelineList');
@@ -1162,18 +1206,23 @@
                 });
             }
 
-            // Credential Audit & Sink Summary
+            // Credential Audit
             const badgesElem = document.getElementById('credBadgesContainer');
             badgesElem.innerHTML = '';
             const summaryElem = document.getElementById('credSinkSummary');
+            const disclaimerElem = document.getElementById('credDisclaimer');
+
+            let forensicRiskScore = 'LOW';
 
             if (!fetchSucceeded || credAudit.status === 'not_evaluated' || credAudit.sink_risk === 'unknown') {
+                forensicRiskScore = 'UNKNOWN';
                 const span = document.createElement('span');
                 span.className = 'tag-pill warning';
                 span.textContent = 'CREDENTIAL ANALYSIS: NOT EVALUATED';
                 badgesElem.appendChild(span);
 
-                summaryElem.textContent = `Sink Risk: UNKNOWN | Exfiltration Flag: NOT EVALUATED (${credAudit.reason || forensics.error || 'Final HTML could not be retrieved'})`;
+                summaryElem.textContent = `Credential Sink Risk: UNKNOWN | Credential Exfiltration Evidence: NOT EVALUATED (${credAudit.reason || forensics.error || 'Final HTML could not be retrieved'})`;
+                disclaimerElem.textContent = 'Credential analysis was not evaluated because the static DOM could not be retrieved.';
             } else {
                 const sensitiveFields = credAudit.sensitive_fields || [];
                 if (sensitiveFields.length === 0) {
@@ -1190,9 +1239,44 @@
                     });
                 }
 
-                const sinkRisk = credAudit.sink_risk || 'low';
-                const exfilFlag = credAudit.exfiltration_flag || false;
-                summaryElem.textContent = `Sink Risk: ${sinkRisk.toUpperCase()} | Exfiltration Flag: ${exfilFlag ? 'TRIGGERED 🚨' : 'CLEAN ✅'}`;
+                const sinkRisk = (credAudit.sink_risk || 'low').toLowerCase();
+                const exfilFlag = credAudit.exfiltration_flag === true;
+
+                if (sinkRisk === 'critical' || sinkRisk === 'high' || exfilFlag) {
+                    forensicRiskScore = 'HIGH';
+                } else {
+                    forensicRiskScore = 'LOW';
+                }
+
+                summaryElem.textContent = `Credential Sink Risk: ${sinkRisk.toUpperCase()} | Credential Exfiltration Evidence: ${exfilFlag ? 'TRIGGERED 🚨' : 'NONE DETECTED ✅'}`;
+                disclaimerElem.textContent = 'No credential-harvesting evidence was identified in the fetched static DOM. This does not establish that the entire site is safe.';
+            }
+
+            // Combined Evidence Summary Calculation
+            const mlRiskElem = document.getElementById('combinedMlRisk');
+            const forensicEvidElem = document.getElementById('combinedForensicEvidence');
+            const interpElem = document.getElementById('combinedInterpretation');
+
+            const rawMlLevel = (tier1Assessment.risk_level || 'critical').toLowerCase();
+            const rawMlPred = (tier1Assessment.prediction || 'Phishing').toLowerCase();
+            const isMlHigh = (rawMlLevel === 'critical' || rawMlLevel === 'suspicious' || rawMlPred === 'phishing');
+
+            mlRiskElem.textContent = isMlHigh ? (rawMlLevel.toUpperCase()) : 'SAFE';
+            mlRiskElem.className = 'tag-pill ' + (rawMlLevel === 'critical' ? 'critical' : (rawMlLevel === 'suspicious' ? 'warning' : 'safe'));
+
+            forensicEvidElem.textContent = forensicRiskScore;
+            forensicEvidElem.className = 'tag-pill ' + (forensicRiskScore === 'HIGH' ? 'critical' : (forensicRiskScore === 'UNKNOWN' ? 'warning' : 'safe'));
+
+            if (!fetchSucceeded) {
+                interpElem.textContent = 'The ML model assessed structural characteristics, but static forensic inspection could not be completed because the HTML fetch failed.';
+            } else if (isMlHigh && forensicRiskScore === 'HIGH') {
+                interpElem.textContent = 'Multiple detection layers identify suspicious behavior.';
+            } else if (isMlHigh && forensicRiskScore === 'LOW') {
+                interpElem.textContent = 'The ML model strongly flags structural characteristics, but static forensic inspection did not identify credential-harvesting evidence. Manual review is recommended.';
+            } else if (!isMlHigh && forensicRiskScore === 'HIGH') {
+                interpElem.textContent = 'Static forensic analysis detected suspicious credential behavior despite a low ML score. Treat as suspicious.';
+            } else {
+                interpElem.textContent = 'No strong indicators were identified by either layer. This is not a guarantee of safety.';
             }
 
             // Homoglyph

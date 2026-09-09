@@ -29,6 +29,27 @@ def _get_registered_domain(url: str) -> str:
 
 
 
+INTERSTITIAL_KEYWORDS = [
+    "verify-ua", "verify", "verification", "challenge", "captcha", "login-wall",
+    "interstitial", "ddos-guard", "cloudflare", "turnstile", "bot-check", "just a moment",
+    "human verification", "checking your browser", "access denied", "security check"
+]
+
+
+def check_interstitial_content(final_url: str, title: str, html: str) -> tuple:
+    """
+    Checks if final fetched page is an anti-bot, verification, challenge, captcha,
+    or interstitial page.
+    """
+    url_lower = (final_url or "").lower()
+    title_lower = (title or "").lower()
+
+    for kw in INTERSTITIAL_KEYWORDS:
+        if kw in url_lower or kw in title_lower:
+            return True, "The target redirected to verification/interstitial content, so the static DOM audit may not represent the intended destination page."
+    return False, ""
+
+
 def perform_deep_analysis(url: str, timeout_budget: float = GLOBAL_SCAN_DEADLINE_SECONDS) -> Dict[str, Any]:
     """
     Executes a Tier 2 deep forensic scan on the given URL.
@@ -67,6 +88,9 @@ def perform_deep_analysis(url: str, timeout_budget: float = GLOBAL_SCAN_DEADLINE
             'redirect_timeline': [],
             'title': '',
             'meta_description': '',
+            'analysis_confidence': 'UNKNOWN',
+            'analysis_confidence_reason': f"URL Normalization error: {e}",
+            'is_interstitial': False,
             'credential_analysis': {
                 'status': 'not_evaluated',
                 'reason': f"URL Normalization error: {e}",
@@ -92,7 +116,6 @@ def perform_deep_analysis(url: str, timeout_budget: float = GLOBAL_SCAN_DEADLINE
             break
 
         fetch_timeout = max(0.05, min(time_left, DEFAULT_TIMEOUT))
-
 
         try:
             res = safe_fetch(current_url, timeout=fetch_timeout)
@@ -140,6 +163,10 @@ def perform_deep_analysis(url: str, timeout_budget: float = GLOBAL_SCAN_DEADLINE
     # Extract DOM details only if fetch succeeded
     title = ""
     meta_description = ""
+    is_interstitial = False
+    analysis_confidence = "HIGH"
+    analysis_confidence_reason = "Final page HTML successfully fetched and evaluated."
+
     if fetch_succeeded and final_html:
         try:
             soup = BeautifulSoup(final_html, 'html.parser')
@@ -153,8 +180,15 @@ def perform_deep_analysis(url: str, timeout_budget: float = GLOBAL_SCAN_DEADLINE
 
         cred_analysis = analyze_credentials(final_html, current_url)
         scan_status = 'completed' if not error_message else 'partial'
+
+        is_interstitial, interstitial_reason = check_interstitial_content(current_url, title, final_html)
+        if is_interstitial:
+            analysis_confidence = "LIMITED"
+            analysis_confidence_reason = interstitial_reason
     else:
         scan_status = 'failed'
+        analysis_confidence = "UNKNOWN"
+        analysis_confidence_reason = f"Final HTML could not be retrieved: {error_message or 'Fetch failed'}"
         cred_analysis = {
             'status': 'not_evaluated',
             'reason': f"Final HTML could not be retrieved: {error_message or 'Fetch failed'}",
@@ -181,6 +215,9 @@ def perform_deep_analysis(url: str, timeout_budget: float = GLOBAL_SCAN_DEADLINE
         'redirect_timeline': redirect_timeline,
         'title': title,
         'meta_description': meta_description,
+        'analysis_confidence': analysis_confidence,
+        'analysis_confidence_reason': analysis_confidence_reason,
+        'is_interstitial': is_interstitial,
         'credential_analysis': cred_analysis,
         'homoglyph_analysis': homoglyph_analysis,
         'scan_duration_seconds': duration,
