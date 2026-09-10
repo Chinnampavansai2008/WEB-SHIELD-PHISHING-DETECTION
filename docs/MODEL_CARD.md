@@ -5,7 +5,7 @@
 - **Model Version**: `v2` (Active Production Default)
 - **Algorithm**: `XGBoostClassifier` (Tree Gradient Boosting)
 - **Artifact Path**: `models/v2/xgb_model_v2.pkl`
-- **Artifact SHA256**: `f9ca677c77c0500bf09ec711a7a01a35541ea370bf21f9ae05b46b088e89f6b9`
+- **Artifact SHA256**: `8a8599224eab03665bfa34e7b42960e9c0369d04e90a65e23b7baceae46b8a55`
 - **Feature Contract Path**: `models/v2/features_v2.pkl`
 - **Scaler Requirement**: **NONE** (Unscaled raw feature input)
 

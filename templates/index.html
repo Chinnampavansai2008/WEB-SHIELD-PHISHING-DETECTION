@@ -815,12 +815,19 @@
 
             <div class="confidence-box">
                 <div class="confidence-label-row">
-                    <span>{{ "ML Phishing Probability" if prediction == 'Phishing' else "Legitimate Confidence" }}</span>
-                    <span>{{ confidence }}%</span>
+                    <span>Model Phishing Probability</span>
+                    <span>{{ "%.2f"|format((ml_probability if ml_probability is defined else (phishing_probability if phishing_probability is defined else 0.5)) * 100) }}%</span>
                 </div>
                 <div class="confidence-track">
-                    <div class="confidence-fill {{ risk_level if risk_level else ('safe' if prediction == 'Legitimate' else 'critical') }}" style="--conf: {{ confidence }}%; width: var(--conf);"></div>
+                    <div class="confidence-fill {{ 'critical' if (ml_probability is defined and ml_probability >= 0.5) or (phishing_probability is defined and phishing_probability >= 0.5) else 'safe' }}" style="--conf: {{ (ml_probability if ml_probability is defined else (phishing_probability if phishing_probability is defined else 0.5)) * 100 }}%; width: var(--conf);"></div>
                 </div>
+
+                {% if ml_is_phishing is defined and not ml_is_phishing %}
+                <div style="display: flex; justify-content: space-between; font-size: 13px; color: #94a3b8; margin-top: 10px; padding-top: 8px; border-top: 1px dashed rgba(255, 255, 255, 0.08);">
+                    <span>ML Classification: <strong style="color: #6ee7b7;">Legitimate</strong></span>
+                    <span>Prediction Confidence: <strong>{{ "%.2f"|format(prediction_confidence if prediction_confidence is defined else confidence) }}%</strong></span>
+                </div>
+                {% endif %}
             </div>
 
 

@@ -65,7 +65,12 @@ def analyze_tier1_url(raw_url: str, force_model_version: str = None) -> dict:
     domain_age = features_dict.get('domain_age_months', -1)
     domain_age_status = get_domain_age_status(domain_age)
 
-    # Three-state risk level triage logic
+    # Pure ML Model Classification (based solely on model decision threshold 0.50)
+    MODEL_THRESHOLD = 0.50
+    ml_is_phishing = bool(phishing_prob >= MODEL_THRESHOLD)
+    ml_prediction = 'Phishing' if ml_is_phishing else 'Legitimate'
+
+    # Three-state independent security triage logic
     if phishing_prob >= 0.75 or homoglyph_risk == 'high' or having_ip == 1:
         risk_level = 'critical'
     elif (0.35 <= phishing_prob < 0.75) or (domain_age_status == 'new') or is_puny:
@@ -73,14 +78,14 @@ def analyze_tier1_url(raw_url: str, force_model_version: str = None) -> dict:
     else:
         risk_level = 'safe'
 
-    # Model prediction verdict based on 0.50 threshold or critical risk override
-    is_phishing = (phishing_prob >= 0.50) or (risk_level == 'critical')
-    verdict = 'Phishing' if is_phishing else 'Legitimate'
+    # Overall verdict combines ML classification and security triage override
+    overall_verdict = 'Phishing' if (ml_is_phishing or risk_level == 'critical') else 'Legitimate'
 
-    if is_phishing:
-        confidence = round(phishing_prob * 100, 2)
+    # Prediction confidence (confidence in pure ML binary classification)
+    if ml_is_phishing:
+        prediction_confidence = round(phishing_prob * 100, 2)
     else:
-        confidence = round((1.0 - phishing_prob) * 100, 2)
+        prediction_confidence = round((1.0 - phishing_prob) * 100, 2)
 
     if risk_level == 'critical':
         recommendation = "DANGER: High-risk phishing or homoglyph impersonation site detected! Do NOT interact or enter credentials."
@@ -93,9 +98,14 @@ def analyze_tier1_url(raw_url: str, force_model_version: str = None) -> dict:
         'url': canonical_url,
         'defanged_url': defanged,
         'hostname': hostname,
-        'prediction': verdict,
+        'prediction': overall_verdict,
+        'overall_verdict': overall_verdict,
+        'ml_prediction': ml_prediction,
+        'ml_is_phishing': ml_is_phishing,
         'risk_level': risk_level,
-        'confidence': confidence,
+        'risk_verdict': risk_level.upper(),
+        'confidence': prediction_confidence,
+        'prediction_confidence': prediction_confidence,
         'phishing_probability': round(phishing_prob, 4),
         'ml_probability': round(phishing_prob, 4),
         'features': features_dict,
@@ -129,8 +139,15 @@ def predict():
             url=result['url'],
             defanged_url=result['defanged_url'],
             prediction=result['prediction'],
+            overall_verdict=result['overall_verdict'],
+            ml_prediction=result['ml_prediction'],
+            ml_is_phishing=result['ml_is_phishing'],
             risk_level=result['risk_level'],
+            risk_verdict=result['risk_verdict'],
             confidence=result['confidence'],
+            prediction_confidence=result['prediction_confidence'],
+            phishing_probability=result['phishing_probability'],
+            ml_probability=result['ml_probability'],
             features=result['features'],
             domain_age_status=result['domain_age_status'],
             homoglyph_analysis=result['homoglyph_analysis'],

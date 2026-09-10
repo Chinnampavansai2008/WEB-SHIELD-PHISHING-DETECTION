@@ -143,23 +143,45 @@ class TestUISemantics(unittest.TestCase):
         res = analyze_tier1_url("https://urlhaus.abuse.ch/browse/")
         self.assertAlmostEqual(res['phishing_probability'], 0.8410, places=3)
         self.assertAlmostEqual(res['ml_probability'], 0.8410, places=3)
-        self.assertEqual(res['confidence'], 84.1)
+        self.assertTrue(res['ml_is_phishing'])
+        self.assertEqual(res['ml_prediction'], 'Phishing')
         self.assertEqual(res['risk_level'], 'critical')
-        self.assertEqual(res['prediction'], 'Phishing')
+        self.assertEqual(res['risk_verdict'], 'CRITICAL')
 
-    def test_9_synthetic_probability_verdict_separation(self):
-        """9. Verify raw probability 0.60 coexists with CRITICAL risk verdict without probability display floor."""
-        def mock_predict_raw(features_dict):
-            return 0.60, pd.DataFrame(), []
+    def test_9_cases_a_b_c_d_ml_vs_risk_verdict_separation(self):
+        """9. Verify Cases A, B, C, D for strict decoupling of ml_probability, ml_is_phishing, and risk_verdict."""
+        
+        # CASE A: ml_probability = 0.84, risk_verdict = CRITICAL
+        with patch('src.predictor.ModelPredictor.predict_raw', return_value=(0.84, pd.DataFrame(), [])):
+            res_a = analyze_tier1_url("http://example.com")
+            self.assertEqual(res_a['ml_probability'], 0.84)
+            self.assertTrue(res_a['ml_is_phishing'])
+            self.assertEqual(res_a['ml_prediction'], 'Phishing')
+            self.assertEqual(res_a['risk_verdict'], 'CRITICAL')
 
-        with patch('src.predictor.ModelPredictor.predict_raw', side_effect=mock_predict_raw):
-            res = analyze_tier1_url("http://192.168.1.1/login")
+        # CASE B: ml_probability = 0.20, risk_verdict = CRITICAL (e.g. IP hostname rule)
+        with patch('src.predictor.ModelPredictor.predict_raw', return_value=(0.20, pd.DataFrame(), [])):
+            res_b = analyze_tier1_url("http://192.168.1.1/login")
+            self.assertEqual(res_b['ml_probability'], 0.20)
+            self.assertFalse(res_b['ml_is_phishing'])
+            self.assertEqual(res_b['ml_prediction'], 'Legitimate')
+            self.assertEqual(res_b['risk_verdict'], 'CRITICAL')
+            self.assertEqual(res_b['prediction_confidence'], 80.0)
 
-        self.assertEqual(res['phishing_probability'], 0.60)
-        self.assertEqual(res['ml_probability'], 0.60)
-        self.assertEqual(res['confidence'], 60.0)
-        self.assertEqual(res['risk_level'], 'critical')
-        self.assertEqual(res['prediction'], 'Phishing')
+        # CASE C: ml_probability = 0.60, risk_verdict = SAFE or SUSPICIOUS
+        with patch('src.predictor.ModelPredictor.predict_raw', return_value=(0.60, pd.DataFrame(), [])):
+            res_c = analyze_tier1_url("http://example.com")
+            self.assertEqual(res_c['ml_probability'], 0.60)
+            self.assertTrue(res_c['ml_is_phishing'])
+            self.assertEqual(res_c['ml_prediction'], 'Phishing')
+
+        # CASE D: ml_probability = 0.30 (Phishing Probability = 30%, Legitimate prediction confidence = 70%)
+        with patch('src.predictor.ModelPredictor.predict_raw', return_value=(0.30, pd.DataFrame(), [])):
+            res_d = analyze_tier1_url("http://example.com")
+            self.assertEqual(res_d['ml_probability'], 0.30)
+            self.assertFalse(res_d['ml_is_phishing'])
+            self.assertEqual(res_d['ml_prediction'], 'Legitimate')
+            self.assertEqual(res_d['prediction_confidence'], 70.0)
 
 
 if __name__ == '__main__':
