@@ -9,6 +9,7 @@ import pandas as pd
 from flask import Flask, render_template, request, jsonify
 
 from src.url_normalizer import normalize_url, InvalidURLError
+from src.safe_fetcher import SSRFError, FetchError
 from src.feature_extraction import extract_features, get_domain_age_status
 from src.homoglyph import analyze_homoglyphs
 from src.explainability import get_top_risk_factors
@@ -16,6 +17,7 @@ from src.deep_analysis import perform_deep_analysis
 from src.ioc import generate_ioc
 from src.defang import defang_url
 from src.predictor import get_predictor, ModelPredictor, ModelInputError
+from src.hybrid_triage import route_for_tier2, compute_hybrid_verdict
 
 app = Flask(__name__)
 
@@ -36,10 +38,11 @@ def analyze_tier1_url(raw_url: str, force_model_version: str = None) -> dict:
     Unified Tier 1 service function:
     1. Normalizes and validates raw URL.
     2. Extracts feature vector.
-    3. Runs XGBoost model probability inference (V2 default, unscaled).
+    3. Runs XGBoost model probability inference.
     4. Evaluates homoglyph / brand impersonation risk.
     5. Computes top SHAP risk factors.
-    6. Determines 3-state risk level ('safe', 'suspicious', 'critical').
+    6. Determines Tier 2 hybrid triage routing requirements.
+    7. Computes hybrid evidence-based risk verdict.
     """
     if not raw_url or not isinstance(raw_url, str) or not raw_url.strip():
         raise InvalidURLError("URL parameter cannot be empty.")
@@ -49,19 +52,22 @@ def analyze_tier1_url(raw_url: str, force_model_version: str = None) -> dict:
     hostname = norm_res["hostname"]
     defanged = defang_url(canonical_url)
 
-    # Feature extraction
-    features_dict = extract_features(canonical_url)
+    # Determine predictor instance
+    active_predictor = get_predictor(force_version=force_model_version) if force_model_version else predictor
+
+    # Extract features matching the model version
+    if active_predictor.version == "v4j4":
+        from src.feature_extraction_v4j import extract_features_v4j
+        features_dict = extract_features_v4j(canonical_url)
+    else:
+        features_dict = extract_features(canonical_url)
 
     # Versioned model prediction and SHAP explainability
-    active_predictor = get_predictor(force_version=force_model_version) if force_model_version else predictor
     phishing_prob, model_df, top_risk_factors = active_predictor.predict_raw(features_dict)
 
     # Homoglyph Analysis
     homoglyph_res = analyze_homoglyphs(hostname)
-    homoglyph_risk = homoglyph_res.get('impersonation_risk', 'low')
-    is_puny = homoglyph_res.get('is_punycode', False)
 
-    having_ip = features_dict.get('having_ip', 0)
     domain_age = features_dict.get('domain_age_months', -1)
     domain_age_status = get_domain_age_status(domain_age)
 
@@ -70,16 +76,13 @@ def analyze_tier1_url(raw_url: str, force_model_version: str = None) -> dict:
     ml_is_phishing = bool(phishing_prob >= MODEL_THRESHOLD)
     ml_prediction = 'Phishing' if ml_is_phishing else 'Legitimate'
 
-    # Three-state independent security triage logic
-    if phishing_prob >= 0.75 or homoglyph_risk == 'high' or having_ip == 1:
-        risk_level = 'critical'
-    elif (0.35 <= phishing_prob < 0.75) or (domain_age_status == 'new') or is_puny:
-        risk_level = 'suspicious'
-    else:
-        risk_level = 'safe'
+    # Compute Hybrid Triage Verdict & Routing
+    hybrid_res = compute_hybrid_verdict(phishing_prob, ml_is_phishing, features_dict, tier2_report=None, url=canonical_url)
+    routing_info = route_for_tier2(phishing_prob, features_dict, url=canonical_url)
 
-    # Overall verdict combines ML classification and security triage override
-    overall_verdict = 'Phishing' if (ml_is_phishing or risk_level == 'critical') else 'Legitimate'
+    risk_level = hybrid_res["risk_verdict"].lower()
+    risk_verdict = hybrid_res["risk_verdict"]
+    overall_verdict = hybrid_res["overall_verdict"]
 
     # Prediction confidence (confidence in pure ML binary classification)
     if ml_is_phishing:
@@ -87,9 +90,9 @@ def analyze_tier1_url(raw_url: str, force_model_version: str = None) -> dict:
     else:
         prediction_confidence = round((1.0 - phishing_prob) * 100, 2)
 
-    if risk_level == 'critical':
+    if risk_verdict == 'CRITICAL':
         recommendation = "DANGER: High-risk phishing or homoglyph impersonation site detected! Do NOT interact or enter credentials."
-    elif risk_level == 'suspicious':
+    elif risk_verdict == 'SUSPICIOUS':
         recommendation = "WARNING: Suspicious indicators detected. Exercise caution before entering sensitive details."
     else:
         recommendation = "SAFE: No critical phishing or homoglyph risk indicators detected."
@@ -103,7 +106,7 @@ def analyze_tier1_url(raw_url: str, force_model_version: str = None) -> dict:
         'ml_prediction': ml_prediction,
         'ml_is_phishing': ml_is_phishing,
         'risk_level': risk_level,
-        'risk_verdict': risk_level.upper(),
+        'risk_verdict': risk_verdict,
         'confidence': prediction_confidence,
         'prediction_confidence': prediction_confidence,
         'phishing_probability': round(phishing_prob, 4),
@@ -112,6 +115,13 @@ def analyze_tier1_url(raw_url: str, force_model_version: str = None) -> dict:
         'domain_age_status': domain_age_status,
         'homoglyph_analysis': homoglyph_res,
         'top_risk_factors': top_risk_factors,
+        'tier2_required': routing_info['tier2_required'],
+        'routing_reason': routing_info['routing_reason'],
+        'routing_reasons': routing_info['routing_reasons'],
+        'scan_status': hybrid_res['scan_status'],
+        'analysis_confidence': hybrid_res['analysis_confidence'],
+        'forensic_evidence_severity': hybrid_res['forensic_evidence_severity'],
+        'forensic_evidence': hybrid_res['forensic_evidence'],
         'recommendation': recommendation,
         'model_version': active_predictor.version,
         'model_feature_count': len(active_predictor.feature_names)
@@ -203,14 +213,32 @@ def api_deep_analyze():
         ioc_report = generate_ioc(url, forensic_report, shap_risk_factors=shap_factors)
 
         if tier1_res:
+            hybrid = compute_hybrid_verdict(
+                tier1_res['ml_probability'],
+                tier1_res['ml_is_phishing'],
+                tier1_res['features'],
+                tier2_report=forensic_report,
+                url=url
+            )
             tier1_summary = {
-                'prediction': tier1_res.get('prediction'),
-                'risk_level': tier1_res.get('risk_level'),
-                'phishing_probability': tier1_res.get('phishing_probability'),
-                'confidence': tier1_res.get('confidence')
+                'prediction': hybrid.get('overall_verdict'),
+                'overall_verdict': hybrid.get('overall_verdict'),
+                'ml_prediction': tier1_res.get('ml_prediction'),
+                'ml_probability': tier1_res.get('ml_probability'),
+                'risk_verdict': hybrid.get('risk_verdict'),
+                'risk_level': hybrid.get('risk_verdict').lower(),
+                'confidence': tier1_res.get('confidence'),
+                'tier2_required': hybrid.get('tier2_required'),
+                'routing_reason': hybrid.get('routing_reason'),
+                'routing_reasons': hybrid.get('routing_reasons'),
+                'scan_status': hybrid.get('scan_status'),
+                'analysis_confidence': hybrid.get('analysis_confidence'),
+                'forensic_evidence_severity': hybrid.get('forensic_evidence_severity'),
+                'forensic_evidence': hybrid.get('forensic_evidence')
             }
             ioc_report['tier1_assessment'] = tier1_summary
             ioc_report['forensics']['tier1_assessment'] = tier1_summary
+            ioc_report['hybrid_assessment'] = hybrid
 
         return jsonify({
             'status': 'success',

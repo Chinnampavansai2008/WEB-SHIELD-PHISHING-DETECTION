@@ -52,8 +52,11 @@ def is_ip_safe(ip_str: str) -> bool:
 
     elif ip_obj.version == 6:
         # Check IPv4-mapped IPv6 addresses (::ffff:x.x.x.x)
-        if ip_obj.ipv4_mapped:
-            return is_ip_safe(str(ip_obj.ipv4_mapped))
+        try:
+            if ip_obj.ipv4_mapped:
+                return is_ip_safe(str(ip_obj.ipv4_mapped))
+        except ValueError:
+            pass
 
         # Check NAT64 prefixes (64:ff9b::/96 WKP and 64:ff9b:1::/48 Local)
         nat64_wkp = ipaddress.ip_network("64:ff9b::/96")

@@ -91,6 +91,30 @@ class ModelPredictor:
 
     def load_model(self):
         """Loads target model artifacts and initializes TreeSHAP explainer once."""
+        if self.requested_version == "v4j4":
+            v4j4_dir = os.path.join(self.models_dir, "v4_variants", "v4_j4")
+            model_path = os.path.join(v4j4_dir, "xgb_model_v4_j4.pkl")
+            
+            if os.path.exists(model_path):
+                self.model = joblib.load(model_path)
+                self.feature_names = self.model.get_booster().feature_names
+                self.uses_scaler = False
+                self.scaler = None
+                self.version = "v4j4"
+                
+                assert len(self.feature_names) == 28, f"V4-J4 feature contract violation: expected 28 features, got {len(self.feature_names)}"
+
+                if hasattr(self.model, "classes_"):
+                    classes_list = list(self.model.classes_)
+                    if 1 in classes_list:
+                        self.phishing_class_idx = classes_list.index(1)
+
+                try:
+                    self.explainer = shap.TreeExplainer(self.model)
+                except Exception:
+                    self.explainer = shap.Explainer(self.model)
+                return
+
         if self.requested_version == "v2":
             v2_dir = os.path.join(self.models_dir, "v2")
             model_path = os.path.join(v2_dir, "xgb_model_v2.pkl")
@@ -164,7 +188,22 @@ class ModelPredictor:
         3. Predict probability using unscaled (V2) or scaled (V1) vector.
         4. Compute SHAP factors using the EXACT SAME input vector.
         """
-        if self.version.startswith("v2"):
+        if self.version == "v4j4":
+            if "url" in raw_features and isinstance(raw_features["url"], str):
+                from src.feature_extraction_v4j import extract_features_v4j
+                feat_dict = extract_features_v4j(raw_features["url"])
+            else:
+                feat_dict = raw_features
+                
+            df = pd.DataFrame([feat_dict])[self.feature_names]
+            assert len(df.columns) == 28, f"Feature count error for V4-J4: expected 28, got {len(df.columns)}"
+            
+            probs = self.model.predict_proba(df)[0]
+            phishing_prob = float(probs[self.phishing_class_idx])
+            shap_factors = self._compute_shap(df, raw_features)
+            return phishing_prob, df, shap_factors
+
+        elif self.version.startswith("v2"):
             # Feature adaptation
             v2_features = adapt_features_v2(raw_features)
             validate_v2_input(v2_features, self.feature_names)

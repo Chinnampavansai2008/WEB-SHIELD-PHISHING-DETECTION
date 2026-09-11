@@ -15,21 +15,14 @@ PASSWORD_KEYWORDS = {"password", "pwd", "pass", "userpass", "secret"}
 OTP_KEYWORDS = {"otp", "token", "totp", "verification_code", "verificationcode", "2fa", "mfa", "security_code", "authenticator"}
 PAYMENT_KEYWORDS = {"card", "cc_number", "cardnumber", "cvv", "cvc", "exp_month", "exp_year", "creditcard", "pan", "cc_name"}
 
-KNOWN_OAUTH_DOMAINS = {
-    "google.com", "accounts.google.com",
-    "microsoftonline.com", "login.microsoftonline.com", "login.live.com", "microsoft.com",
-    "okta.com", "auth0.com", "pingidentity.com", "keycloak.org"
-}
-
-KNOWN_PAYMENT_DOMAINS = {
-    "stripe.com", "checkout.stripe.com",
-    "paypal.com", "checkout.paypal.com",
-    "adyen.com", "braintreegateway.com", "squareup.com"
-}
-
 KNOWN_WEBHOOK_DOMAINS = {
     "discord.com", "discordapp.com", "api.telegram.org", "hooks.slack.com",
     "webhook.site", "pipedream.net", "requestcatcher.com"
+}
+
+FEDERATED_AUTH_PARAMS = {
+    'redirect_uri', 'client_id', 'state', 'code', 'scope',
+    'samlrequest', 'relaystate', 'response_type', 'wa', 'wtrealm'
 }
 
 
@@ -40,9 +33,29 @@ def _get_registered_domain(host: str) -> str:
     return getattr(ext, 'registered_domain', '') or ''
 
 
+def check_federated_auth_context(url: str) -> bool:
+    """
+    Detects whether URL query string contains standard OAuth/OIDC/SAML/WS-Fed protocol parameters.
+    Handles defanged URLs safely without triggering urllib.parse IPv6 errors.
+    """
+    if not url:
+        return False
+    u_lower = str(url).lower().replace('[://]', '://').replace('[:]', ':').replace('[.]', '.').replace('[', '').replace(']', '')
+    try:
+        parsed = urlparse(u_lower if u_lower.startswith(('http://', 'https://')) else 'http://' + u_lower)
+        query_text = parsed.query
+        if not query_text:
+            return False
+        param_keys = set(param.split('=')[0].lower() for param in query_text.split('&') if param)
+        return len(FEDERATED_AUTH_PARAMS.intersection(param_keys)) > 0
+    except Exception:
+        return False
+
+
 def _classify_destination(action_url: str, page_url: str) -> str:
     """
-    Classifies a form action URL against the current page domain.
+    Classifies a form action URL against current page domain using registered-domain structure.
+    No domain whitelists are used.
     """
     if not action_url or action_url.strip() in ("", "#", "javascript:void(0)"):
         return "SAME_ORIGIN"
@@ -72,16 +85,10 @@ def _classify_destination(action_url: str, page_url: str) -> str:
     action_reg = _get_registered_domain(action_host)
     page_reg = _get_registered_domain(page_host)
 
-    if action_reg and action_reg == page_reg:
+    if action_reg and page_reg and action_reg == page_reg:
         return "SAME_REGISTERED_DOMAIN"
 
-    if any(action_reg == _get_registered_domain(d) for d in KNOWN_OAUTH_DOMAINS):
-        return "KNOWN_OAUTH"
-
-    if any(action_reg == _get_registered_domain(d) for d in KNOWN_PAYMENT_DOMAINS):
-        return "KNOWN_PAYMENT"
-
-    return "UNKNOWN_EXTERNAL"
+    return "EXTERNAL_REGISTERED_DOMAIN"
 
 
 
@@ -160,20 +167,16 @@ def analyze_credentials(html_content: str, page_url: str = "http://example.com")
             if sensitive_fields:
                 exfiltration_detected = True
                 highest_dest_risk = "CRITICAL"
-        elif dest_type == "UNKNOWN_EXTERNAL":
+        elif dest_type == "EXTERNAL_REGISTERED_DOMAIN":
             if sensitive_fields:
-                exfiltration_detected = True
                 if highest_dest_risk != "CRITICAL":
-                    highest_dest_risk = "CRITICAL"
+                    highest_dest_risk = "HIGH"
 
     if not sensitive_fields:
         sink_risk = "low"
         exfiltration_flag = False
     elif highest_dest_risk == "CRITICAL" or exfiltration_detected:
         sink_risk = "critical"
-        exfiltration_flag = True
-    elif highest_dest_risk == "HIGH":
-        sink_risk = "high"
         exfiltration_flag = True
     else:
         sink_risk = "low"

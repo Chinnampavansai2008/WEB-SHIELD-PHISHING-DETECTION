@@ -6,7 +6,7 @@
 [![Flask](https://img.shields.io/badge/framework-Flask-black.svg)](https://flask.palletsprojects.com/)
 [![XGBoost](https://img.shields.io/badge/ML-XGBoost-green.svg)](https://xgboost.readthedocs.io/)
 [![SHAP](https://img.shields.io/badge/Explainability-TreeSHAP-orange.svg)](https://shap.readthedocs.io/)
-[![Tests](https://img.shields.io/badge/tests-73%2F73%20passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-114%2F114%20passing-brightgreen.svg)]()
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 ---
@@ -15,10 +15,17 @@
 
 **Web Shield** is an explainable, two-stage phishing detection and forensic triage platform designed for modern security operations and automated threat analysis. Unlike traditional black-box security tools that return arbitrary risk scores, Web Shield combines rapid machine-learning screening with security-hardened forensic analysis to deliver transparent, actionable threat intelligence.
 
-- **Tier 1 (Rapid ML Screening)**: Performs lightweight, real-time feature extraction across URL structure, hostname entropy, TLS state, and domain age, passing 11 canonical features to an XGBoost model. Every prediction is paired with **TreeSHAP attribution**, surfacing exact feature contributions and neutral semantic interpretations.
+- **Tier 1 (Rapid ML Screening)**: Performs lightweight, real-time feature extraction across URL structure, hostname entropy, brand token mismatch, TLS state, and domain age, passing canonical features to an XGBoost model. Every prediction is paired with **TreeSHAP attribution**, surfacing exact feature contributions and neutral semantic interpretations.
 - **Tier 2 (Forensic Deep Analysis)**: Triggers an isolated, SSRF-protected network transport to inspect HTTP response headers, trace redirect chains step-by-step, conduct static DOM credential sink audits, and export defanged Indicators of Compromise (IOCs).
 
-Web Shield doesn't just output a phishing probability—it provides a 3-state risk verdict (`SAFE`, `SUSPICIOUS`, `CRITICAL`), SHAP risk explanations, Unicode/Punycode homoglyph analysis, redirect evidence, credential form audits, defanged IOC outputs, and defensive deep-analysis reports.
+Web Shield provides a 3-state risk verdict (`SAFE`, `SUSPICIOUS`, `CRITICAL`), SHAP risk explanations, Unicode/Punycode homoglyph analysis, redirect evidence, credential form audits, defanged IOC outputs, and defensive deep-analysis reports.
+
+---
+
+## Production & Candidate System Status
+
+- **Active Production Default**: **Model V2** (`models/xgb_model_v2.pkl`, 11 features) is configured as the active production predictor in `src/predictor.py` and `app.py`.
+- **Shadow Candidate Tier 1**: **V4-J4** (`models/v4_variants/v4_j4/xgb_model_v4_j4.pkl`, 28 features) is fully integrated as the candidate Tier-1 model paired with **Router-E**.
 
 ---
 
@@ -27,14 +34,14 @@ Web Shield doesn't just output a phishing probability—it provides a 3-state ri
 ```mermaid
 flowchart TD
     A[User / Client URL] --> B[Canonical URL Normalizer]
-    B --> C[Tier 1 Feature Extractor]
-    C --> D[XGBoost Model V2]
+    B --> C[Tier 1 Feature Extractor - 28 Features]
+    C --> D[XGBoost Classifier - V2 / V4-J4 Candidate]
     D --> E[TreeSHAP Explainer]
     B --> F[Unicode & Homoglyph Engine]
     E --> G[3-State Risk Triage]
     F --> G
-    G --> H{Deep Analysis Requested?}
-    H -->|No| I[Tier 1 Screening Report]
+    G --> H{Tier 2 Router-E Triggered?}
+    H -->|No| I[Tier 1 Fast Screening Report]
     H -->|Yes| J[Tier 2 Safe Fetcher]
     J --> K[SSRF & Global IP Validation]
     K --> L[IP-Pinned TLS Transport]
@@ -43,25 +50,54 @@ flowchart TD
     N --> O[Defanged IOC & Evidence Report]
 ```
 
+### Router-E Triage Specification
+Router-E determines whether Tier 2 static forensic analysis is required based on structural URL properties:
+1. **`AMBIGUOUS_BAND`**: $0.40 \le P_{\text{ML}} \le 0.60$
+2. **`AUTH_WEAK_CLASS`**: $0.25 \le P_{\text{ML}} < 0.35$ with authentication context keywords (`login`, `auth`, `sso`, etc.)
+3. **`SHARED_HOSTING`**: Shared hosting platform (`workers.dev`, `netlify.app`, etc.) with auth context or $P_{\text{ML}} \ge 0.20$
+4. **`BRAND_MISMATCH`**: Brand token mismatch with auth context or $P_{\text{ML}} \ge 0.15$
+5. **`IP_HOST`**: Hostname is a raw IP address
+
 ---
 
-## Key Features
+## Benchmark Metrics & Reconciliation Table
 
-### Tier 1: Explainable ML Screening
-- **Rapid Feature Extraction**: Extracts 11 structural features in ~1.5ms without requiring external browser rendering.
-- **TreeSHAP Attribution**: Computes unscaled, exact SHAP contribution values for top risk factors.
-- **Semantic Explanation Layer**: Separates mathematical SHAP direction (`toward_phishing` vs `toward_legitimate`) from neutral feature descriptions to prevent misleading claims on standard URLs.
-- **Unicode & Homoglyph Detection**: Detects Punycode (`xn--`), mixed-script domains, and confusable character sets without automatically flagging legitimate internationalized domain names as phishing.
-- **Domain Age Status Engine**: Classifies domain age into `UNKNOWN` (-1), `NEW` ($\le 6$ months), or `ESTABLISHED`, ensuring WHOIS lookup failures are safely marked `UNKNOWN` rather than misclassified as new domains.
-- **Versioned Model Architecture**: Supports versioned model loading (`ModelPredictor`) with instant environment-based rollback (`WEBSHIELD_MODEL_VERSION=v2`).
+Below is the reconciled summary of evaluation metrics across benchmarks and router configurations:
 
-### Tier 2: Security-Hardened Forensic Triage
-- **SSRF & IP Validation**: Enforces strict pre-connection checks blocking loopback (`127.0.0.1`, `::1`), private RFC1918 subnets (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`), link-local (`169.254.169.254`), CGNAT, and NAT64/mapped IPv6 addresses.
-- **DNS Pinning & SNI Preservation**: Custom socket adapter (`PinnedIPAdapter`) pins TCP connections to validated IP addresses while retaining the original target hostname for TLS Server Name Indication (SNI) and certificate validation.
-- **Manual Redirect Chain Tracing**: Intercepts and re-validates every HTTP redirect hop against SSRF rules before following.
-- **Static DOM Credential Sink Audit**: Scans HTML forms for password fields, email harvesting, external form actions, suspicious credential sinks, and OAuth/payment provider contexts.
-- **Failed-Fetch Safety Semantics**: Guarantees network/DNS/TLS lookup failures never produce false `CLEAN` verdicts or HTTP `0`. Failed fetches return `fetch_succeeded=False`, `scan_status=failed`, `credential_analysis=NOT_EVALUATED`, and `sink_risk=UNKNOWN`.
-- **Defanged IOC Export**: Formats URLs into defanged text (`hxxps[://]...[.]...`) and exports structured JSON IOC reports protected against XSS injection.
+| Evaluation Benchmark | Model / Router | Phishing Recall | FPR | Total Routing | Non-IP Routing | Benchmark Context & Description |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Final Independent Auth (426)** | V4-J4 + Router-E | **100.00%** | **0.00%** | **20.66%** | **20.66%** | Clean, 173-domain balanced authentication holdout (250 Phish, 176 Legit Auth). Zero leakage. |
+| **Final Independent Auth (426)** | V4-J4 + Router-D | **100.00%** | **0.00%** | **51.88%** | **51.88%** | Historical Router-D baseline on independent auth benchmark. |
+| **Primary Holdout (452)** | V4-J4 + Router-E | **95.20%** | **4.95%** | **60.40%** | **8.63%** | 452-sample primary holdout (`dataset_blind_holdout.csv`). Contains 234 IP-host threat URLs. |
+| **Primary Holdout (452)** | V4-J4 + Router-D | **97.20%** | **5.94%** | **61.28%** | **12.39%** | Historical Router-D baseline on primary holdout. Recovered 4 FNs via Tier 2. |
+| **Primary Holdout (452)** | V4-J4 Baseline | **95.60%** | **5.94%** | N/A | N/A | Standalone Tier 1 V4-J4 model without Tier 2 routing. |
+
+*IP-Host Routing Note*: Router-E routes 60.40% of the primary holdout in total, but only 8.63% when IP-host cases are excluded. The primary holdout contains an unusually large concentration of IP-host phishing samples (234 / 452 URLs).
+
+*Release Claim Note*: V4-J4 achieved 100% credential-phishing recall and 0% legitimate-auth FPR on the frozen 426-sample independent authentication benchmark. All results are benchmark-specific and do not represent claims of universal real-world accuracy.
+
+---
+
+## System Capabilities & Limitations
+
+### Static Forensics Capabilities (Tier 2 Phase 1)
+- Static HTML form parsing and input field analysis.
+- Password input field detection.
+- Registered-domain form destination relationship auditing (`SAME_ORIGIN`, `SAME_REGISTERED_DOMAIN`, `EXTERNAL_REGISTERED_DOMAIN`).
+- Cross-origin external credential POST detection.
+- HTTPS-to-HTTP unencrypted credential submission (downgrade attack) detection.
+- Redirect chain tracing and step-by-step SSRF revalidation.
+
+### Limitations (Phase 1 Scope)
+Current Tier 2 static analysis does **NOT** guarantee detection of:
+- JavaScript-only rendered credential forms (e.g. single-page apps rendering forms via AJAX).
+- Shadow-DOM or iframe-encapsulated forms.
+- Executable binary malware, script payloads (`.exe`, `.ps1`, `.js`, `.dll`).
+- Archive files (`.zip`, `.rar`, `.7z`) or image steganography.
+
+### Future Roadmap
+- **Phase 2 (Isolated Browser Renderer)**: Headless browser environment to execute client-side JavaScript and render dynamic DOMs for single-page application (SPA) credential flows.
+- **Phase 3 (Payload Analysis Service)**: Dedicated sandbox service for deep inspection of executable binaries, scripts, and document archives.
 
 ---
 
@@ -97,148 +133,43 @@ flowchart TD
    ```bash
    python app.py
    ```
-   Access the Cyber-Command Web Interface at `http://127.0.0.1:5000/`.
+   Access the Web Interface at `http://127.0.0.1:5000/`.
 
 ---
 
-## Usage Guide
+## API Usage Examples
 
-### 1. Web Interface
-Navigate to `http://127.0.0.1:5000/` to use the interactive dashboard. Submit any URL for real-time Tier 1 screening, view top SHAP risk factors, inspect Punycode/homoglyph alerts, and trigger Tier 2 Forensic Deep Analysis.
-
-### 2. REST API Endpoints
-
-#### `POST /predict`
-Legacy form endpoint returning binary classification and probability.
-
-#### `POST /api/v1/analyze` (Tier 1 Screening API)
-Returns structural features, model metadata, risk classification, and SHAP explanations.
-
-**Request Payload**:
-```json
-{
-  "url": "https://github.com/Chinnampavansai2008/WEB-SHIELD-PHISHING-DETECTION"
-}
-```
-
-**Response Payload**:
-```json
-{
-  "success": true,
-  "data": {
-    "url": "https://github.com/Chinnampavansai2008/WEB-SHIELD-PHISHING-DETECTION",
-    "prediction": true,
-    "phishing_probability": 0.0678,
-    "risk_level": "safe",
-    "model_version": "v2",
-    "model_feature_count": 11,
-    "domain_age_status": "UNKNOWN",
-    "top_risk_factors": [
-      {
-        "feature": "url_length",
-        "label": "URL Character Count",
-        "observed_value": 68,
-        "shap_value": -0.4067,
-        "direction": "toward_legitimate",
-        "semantic_interpretation": "Standard structural path length"
-      }
-    ]
-  }
-}
-```
-
-#### `POST /api/v1/deep-analyze` (Tier 2 Forensic API)
-Executes Tier 1 ML screening followed by Tier 2 SSRF-protected network fetch, redirect tracing, static DOM credential audit, and IOC generation.
-
----
-
-## Model Performance & Honest Evaluation
-
-Web Shield's active production default is **Model V2** (`models/v2/xgb_model_v2.pkl`). Model performance has been rigorously benchmarked across three frozen evaluation partitions:
-
-### Authoritative Benchmark Results
-
-| Evaluation Partition | Dataset / Description | Samples | Accuracy | Precision | Recall | F1-Score | ROC-AUC | FPR |
-| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **SET A: Legacy V2 Grouped** | `LEGACY_V2_GROUPED_TEST` (Registered-domain split) | 245 | **95.92%** | **94.32%** | **94.32%** | **94.32%** | **99.02%** | **3.18%** |
-| **SET B: V3 Grouped** | `V3_GROUPED_TEST` (Length-balanced domain split) | 444 | **66.67%** | 37.93% | **77.78%** | 50.99% | 84.95% | 36.52% |
-| **SET C: Hard Holdout** | `HARD_HOLDOUT` (Independent hard test URLs) | 198 | **80.30%** | **80.00%** | **77.42%** | **78.69%** | 88.44% | 17.14% |
-
-> [!IMPORTANT]
-> **Honest ML Performance Statement**: Model V2 achieved 95.92% accuracy on its legacy registered-domain grouped benchmark, while harder generalization evaluations produced lower results. Model V2 exhibits URL-length sensitivity on complex non-bare URLs ($url\_length > 30$) such as Wikipedia articles, GitHub repositories, and checkout pages. Candidate models (V3/V3.1) were trained and evaluated to explore this tradeoff; however, Model V2 remains the production baseline to preserve primary benchmark recall.
-
----
-
-## Security & Forensic Hardening
-
-Web Shield enforces strict defensive engineering across network transport and data handling:
-
-1. **Air-Tighter SSRF Protection**: Validates all IP addresses resolved by DNS against IPv4/IPv6 private ranges before opening sockets.
-2. **Pinned IP Transport**: Prevents DNS rebinding attacks by forcing TCP socket connections directly to pre-validated IP addresses.
-3. **SNI & TLS Verification**: Retains original SNI hostnames for TLS handshakes and enforces valid certificate chains.
-4. **Safe Redirect Handling**: Disables automatic HTTP library redirects, re-validating each location header destination before following.
-5. **Failed-Fetch Resilience**: Network failures set `fetch_succeeded=False`, `scan_status=failed`, `credential_analysis=NOT_EVALUATED`, and `sink_risk=UNKNOWN`. Failed fetches NEVER fabricate HTTP status `200` or `0`, and NEVER display `CLEAN`.
-6. **Defanged Output**: Suspicious URLs are automatically defanged (`hxxps[://]domain[.]com`) in reports to prevent accidental clicks.
-
----
-
-## Project Structure
-
-```text
-WEB-SHIELD-PHISHING-DETECTION/
-├── app.py                      # Main Flask application & API routes
-├── requirements.txt            # Dependency declarations
-├── README.md                   # Project documentation
-├── data/                       # Datasets & evaluation splits
-│   ├── dataset_v2.csv
-│   ├── dataset_v3.csv
-│   └── dataset_v3_1.csv
-├── models/                     # Frozen XGBoost model artifacts
-│   ├── v2/                     # Active Production Default (V2)
-│   ├── v3/                     # Experimental Model V3
-│   └── v3_1/                   # Experimental Model V3.1
-├── src/                        # Core application modules
-│   ├── predictor.py            # Unified ModelPredictor abstraction
-│   ├── feature_extraction.py   # 11-feature canonical extractor
-│   ├── explainability.py       # TreeSHAP & neutral label mapper
-│   ├── homoglyph.py            # Unicode & Punycode detector
-│   ├── safe_fetcher.py         # SSRF-protected DNS-pinned transport
-│   ├── deep_analysis.py        # Tier 2 forensic analyzer
-│   ├── credential_analysis.py  # Static DOM credential sink auditor
-│   └── ioc.py                  # Defanged IOC generator
-├── templates/                  # Jinja2 HTML templates
-│   └── index.html              # Cyber-Command Web Dashboard
-└── tests/                      # Automated test suite (73/73 PASS)
-    ├── test_e2e_routes.py      # Route integration tests
-    ├── test_fetch_failures.py  # Network failure semantics tests
-    ├── test_phase3_api.py      # API contract validation tests
-    ├── test_safe_fetcher.py    # SSRF & DNS pinning security tests
-    ├── test_domain_age.py      # Domain age UNKNOWN semantics tests
-    ├── test_explainability.py  # TreeSHAP vector alignment tests
-    └── test_v2_integration.py # Model V2 integration tests
-```
-
----
-
-## Running Automated Tests
-
-Run the complete test suite (73 passing tests):
-
+### 1. Rapid Tier 1 Analysis (`POST /api/v1/analyze`)
 ```bash
-python -m unittest discover tests
+curl -X POST http://127.0.0.1:5000/api/v1/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://sso.harvard.edu/cas/login"}'
 ```
 
-Expected Output:
-```text
-.........................................................................
-----------------------------------------------------------------------
-Ran 73 tests in 16.482s
-
-OK
+### 2. Forensic Deep Analysis (`POST /api/v1/deep-analyze`)
+```bash
+curl -X POST http://127.0.0.1:5000/api/v1/deep-analyze \
+  -H "Content-Type: application/json" \
+  -d '{"url": "http://microsoft-online-secure-auth-100.com/login.php"}'
 ```
 
 ---
 
-## License
+## Rollback & Configuration
 
-This project is open-source and available under the [MIT License](LICENSE).
+To toggle active model versions or router configurations:
+- **Environment Variable Override**:
+  ```bash
+  export WEBSHIELD_MODEL_VERSION=v2 # Reverts to Model V2 production baseline
+  ```
+- **Router Configuration Override**:
+  Pass `router_version='D'` or `router_version='E'` to `route_for_tier2()`.
+
+---
+
+## Running Tests
+
+Execute the full automated test suite (114 tests):
+```bash
+pytest tests/
+```

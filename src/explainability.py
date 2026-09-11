@@ -22,7 +22,7 @@ FEATURE_NEUTRAL_LABELS = {
     'url_length': 'URL Length',
     'having_ip': 'Hostname Type',
     'has_at_symbol': "'@' Symbol Presence",
-    'redirect_count': 'Redirect Count',
+    'redirect_count': "Lexical '//' Marker Count",
     'subdomain_count': 'Subdomain Count',
     'hyphen_count': 'Domain Hyphen Count',
     'domain_entropy': 'Domain Character Entropy',
