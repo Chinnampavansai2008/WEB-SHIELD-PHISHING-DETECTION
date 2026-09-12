@@ -15,6 +15,7 @@ env/
 # Logs and runtime telemetry
 *.log
 local_telemetry/
+artifacts/tmp/
 
 # IDE & Editor files
 .vscode/
