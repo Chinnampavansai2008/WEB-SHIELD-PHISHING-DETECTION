@@ -25,56 +25,26 @@ Web Shield provides a 3-state risk verdict (`SAFE`, `SUSPICIOUS`, `CRITICAL`), S
 ## Production & Candidate System Status
 
 - **Active Production Default**: **Model V2** (`models/xgb_model_v2.pkl`, 11 features) is configured as the active production predictor in `src/predictor.py` and `app.py`.
-- **Shadow Candidate Tier 1**: **V4-J4** (`models/v4_variants/v4_j4/xgb_model_v4_j4.pkl`, 28 features) is fully integrated as the candidate Tier-1 model paired with **Router-E**.
+- **Shadow Candidate Tier 1**: **V4-J4** (`models/v4_variants/v4_j4/xgb_model_v4_j4.pkl`, 28 features) is integrated as the candidate Tier-1 model paired with **Router-E** in shadow mode (`WEBSHIELD_SHADOW_MODE=true`).
 
----
-
-## Architecture
-
-```mermaid
-flowchart TD
-    A[User / Client URL] --> B[Canonical URL Normalizer]
-    B --> C[Tier 1 Feature Extractor - 28 Features]
-    C --> D[XGBoost Classifier - V2 / V4-J4 Candidate]
-    D --> E[TreeSHAP Explainer]
-    B --> F[Unicode & Homoglyph Engine]
-    E --> G[3-State Risk Triage]
-    F --> G
-    G --> H{Tier 2 Router-E Triggered?}
-    H -->|No| I[Tier 1 Fast Screening Report]
-    H -->|Yes| J[Tier 2 Safe Fetcher]
-    J --> K[SSRF & Global IP Validation]
-    K --> L[IP-Pinned TLS Transport]
-    L --> M[Redirect Chain Auditor]
-    M --> N[Static DOM Credential Analysis]
-    N --> O[Defanged IOC & Evidence Report]
-```
-
-### Router-E Triage Specification
-Router-E determines whether Tier 2 static forensic analysis is required based on structural URL properties:
-1. **`AMBIGUOUS_BAND`**: $0.40 \le P_{\text{ML}} \le 0.60$
-2. **`AUTH_WEAK_CLASS`**: $0.25 \le P_{\text{ML}} < 0.35$ with authentication context keywords (`login`, `auth`, `sso`, etc.)
-3. **`SHARED_HOSTING`**: Shared hosting platform (`workers.dev`, `netlify.app`, etc.) with auth context or $P_{\text{ML}} \ge 0.20$
-4. **`BRAND_MISMATCH`**: Brand token mismatch with auth context or $P_{\text{ML}} \ge 0.15$
-5. **`IP_HOST`**: Hostname is a raw IP address
+> **Shadow Execution Operational Note**: Shadow inference is isolated from production decision semantics but currently executes synchronously within the request path. Under concurrent load, shadow execution adds request latency. Moving shadow inference to an asynchronous worker/queue is a future production optimization.
 
 ---
 
 ## Benchmark Metrics & Reconciliation Table
 
-Below is the reconciled summary of evaluation metrics across benchmarks and router configurations:
+Below is the authoritative summary of evaluation metrics across frozen evaluation benchmarks:
 
-| Evaluation Benchmark | Model / Router | Phishing Recall | FPR | Total Routing | Non-IP Routing | Benchmark Context & Description |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Final Independent Auth (426)** | V4-J4 + Router-E | **100.00%** | **0.00%** | **20.66%** | **20.66%** | Clean, 173-domain balanced authentication holdout (250 Phish, 176 Legit Auth). Zero leakage. |
-| **Final Independent Auth (426)** | V4-J4 + Router-D | **100.00%** | **0.00%** | **51.88%** | **51.88%** | Historical Router-D baseline on independent auth benchmark. |
-| **Primary Holdout (452)** | V4-J4 + Router-E | **95.20%** | **4.95%** | **60.40%** | **8.63%** | 452-sample primary holdout (`dataset_blind_holdout.csv`). Contains 234 IP-host threat URLs. |
-| **Primary Holdout (452)** | V4-J4 + Router-D | **97.20%** | **5.94%** | **61.28%** | **12.39%** | Historical Router-D baseline on primary holdout. Recovered 4 FNs via Tier 2. |
-| **Primary Holdout (452)** | V4-J4 Baseline | **95.60%** | **5.94%** | N/A | N/A | Standalone Tier 1 V4-J4 model without Tier 2 routing. |
+| Evaluation Benchmark | Model / Router | Phishing Recall | FPR | Accuracy / F1 | Total Routing | Non-IP Routing | Tier-2 Recovery | Benchmark Context & Description |
+| :--- | :--- | :---: | :---: | :---: | :---: | :---: | :---: | :--- |
+| **Auth-426 Holdout** | V4-J4 Candidate | **100.00%** (250/250) | **3.41%** (6/176) | **98.59%** / **98.81%** | **20.66%** (88/426) | **20.66%** | N/A | Auth holdout ($TN=170, FP=6, FN=0, TP=250$). |
+| **Primary-452 Holdout** | Tier-1 V4-J4 | **95.60%** (239/250) | **5.94%** (12/202) | **94.91%** / **95.41%** | N/A | N/A | N/A | Primary holdout ($TN=190, FP=12, FN=11, TP=239$). |
+| **Primary-452 Holdout** | Offline Hybrid Router-E | **95.60%** (239/250) | **5.94%** (12/202) | **94.91%** / **95.41%** | **57.74%** (261/452) | **5.97%** (27/452) | **0** | Tier 2 evidence enrichment. Zero FN recovery. |
 
-*IP-Host Routing Note*: Router-E routes 60.40% of the primary holdout in total, but only 8.63% when IP-host cases are excluded. The primary holdout contains an unusually large concentration of IP-host phishing samples (234 / 452 URLs).
-
-*Release Claim Note*: V4-J4 achieved 100% credential-phishing recall and 0% legitimate-auth FPR on the frozen 426-sample independent authentication benchmark. All results are benchmark-specific and do not represent claims of universal real-world accuracy.
+### Benchmark Limitations & Disclosure
+* **Auth-426 Structural Collisions**: Auth-426 contains repeated identical 28-feature patterns across distinct real-world URLs. 50 collision groups cover 297 samples; therefore, sample-level metrics do not represent 426 statistically independent feature patterns.
+* **Primary-452 IP-Host Distribution**: Primary-452 contains 234 IP-host phishing samples and 0 legitimate IP-host samples. Its 57.74% total routing rate is dominated by IP-host rules ($234/452 = 51.77\%$) and does not represent real production traffic composition.
+* **Tier-2 Forensic Claim**: Tier 2 provides static forensic evidence enrichment for selected URLs. In the canonical offline Primary-452 benchmark, Tier 2 did not change the Tier-1 confusion matrix.
 
 ---
 

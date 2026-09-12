@@ -2,12 +2,19 @@
 __pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
 
-# Environments
+# Environments & Environment files
 .venv/
 venv/
 ENV/
 env/
+.env
+.env.local
+
+# Logs and runtime telemetry
+*.log
+local_telemetry/
 
 # IDE & Editor files
 .vscode/

@@ -43,31 +43,25 @@
 
 ---
 
-## Evaluation Benchmark Performance
+## Authoritative Benchmark Metrics
 
-### 1. Final Independent Authentication Benchmark (`data/dataset_auth_phishing_final_independent.csv`, 426 samples)
-- **Dataset Composition**: 250 verified credential-phishing URLs, 176 verified legitimate authentication URLs (173 unique registered domains; max domain share = 1.14%).
-- **Standalone V4-J4**:
-  - `TN = 176`, `FP = 0`, `FN = 0`, `TP = 250`
-  - Credential Phishing Recall: **100.00%**
-  - Legitimate Auth FPR: **0.00%**
-  - F1-Score: **100.00%** | ROC-AUC: **1.0000**
-- **Hybrid V4-J4 + Router-E**:
-  - `TN = 176`, `FP = 0`, `FN = 0`, `TP = 250`
-  - Credential Phishing Recall: **100.00%**
-  - Legitimate Auth FPR: **0.00%**
-  - Tier-2 Routing Rate: **20.66%** (88 / 426 URLs)
+### 1. Auth-426 Holdout Benchmark (`data/dataset_auth_phishing_final_independent.csv`, 426 samples)
+- **Confusion Matrix**: `TN = 170`, `FP = 6`, `FN = 0`, `TP = 250`
+- **Accuracy**: **98.59%**
+- **Precision**: **97.66%**
+- **Recall**: **100.00%**
+- **F1-Score**: **98.81%**
+- **FPR**: **3.41%**
+- **Tier-2 Routing Rate**: **20.66%** (88 / 426 URLs)
 
-*Note*: Performance metrics on this frozen benchmark represent benchmark-specific evaluation results and should not be construed as universal real-world accuracy claims.
-
-### 2. Primary Holdout Benchmark (`data/dataset_blind_holdout.csv`, 452 samples)
-- **Standalone V4-J4 Baseline**:
-  - `TN = 192`, `FP = 10`, `FN = 140`, `TP = 110` (or `TN = 190`, `FP = 12`, `FN = 11`, `TP = 239` on full set)
-  - Baseline Recall: **95.20%** | Baseline FPR: **4.95%**
-- **Hybrid V4-J4 + Router-E**:
-  - Recall: **95.20%** | FPR: **4.95%**
-  - Total Tier-2 Routing Rate: **60.40%** (273 / 452 URLs)
-  - Non-IP Tier-2 Routing Rate: **8.63%** (39 / 452 URLs)
+### 2. Primary-452 Holdout Benchmark (`data/dataset_blind_holdout.csv`, 452 samples)
+- **Confusion Matrix**: `TN = 190`, `FP = 12`, `FN = 11`, `TP = 239`
+- **Recall**: **95.60%**
+- **FPR**: **5.94%**
+- **F1-Score**: **95.41%**
+- **Total Routing Rate**: **57.74%** (261 / 452 URLs)
+- **Non-IP Routing Rate**: **5.97%** (27 / 452 URLs)
+- **Offline Tier-2 FN Recovery**: **0**
 
 ---
 
@@ -77,6 +71,8 @@
 
 ---
 
-## Limitations & Known Failure Modes
-1. **Lexical Keyword & Hostname Collision**: Long benign government or enterprise authentication URLs containing terms like `login` or `sso` without WHOIS domain age data can produce elevated ML probabilities if unmitigated by Router-E thresholds.
-2. **Static Forensics Scope**: V4-J4 handles structural URL screening. Dynamic JavaScript-only credential forms or binary malware downloads require Tier-2 static analysis or specialized payload inspection services.
+## Benchmark Limitations & Disclosure
+1. **Auth-426 Structural Collisions**: Auth-426 contains repeated identical 28-feature patterns across distinct real-world URLs. 50 collision groups cover 297 samples; therefore, sample-level metrics do not represent 426 statistically independent feature patterns.
+2. **Primary-452 IP-Host Distribution**: Primary-452 contains 234 IP-host phishing samples and 0 legitimate IP-host samples. Its 57.74% total routing rate is dominated by IP-host rules ($234/452 = 51.77\%$) and does not represent real production traffic composition.
+3. **Tier-2 Forensic Claim**: Tier 2 provides static forensic evidence enrichment for selected URLs. In the canonical offline Primary-452 benchmark, Tier 2 did not change the Tier-1 confusion matrix.
+4. **Shadow Execution Wording**: Shadow inference is isolated from production decision semantics but currently executes synchronously within the request path. Under concurrent load, shadow execution adds request latency. Moving shadow inference to an asynchronous worker/queue is a future production optimization.
